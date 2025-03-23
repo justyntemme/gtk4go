@@ -2,37 +2,31 @@
 // File: gtk4go/gtk4/dialog.go
 package gtk4
 
-/*
-#cgo pkg-config: gtk4
-#include <gtk/gtk.h>
-#include <stdlib.h>
-
-// Response callback for close requests
-extern gboolean go_window_close_request_callback(GtkWindow *window, gpointer user_data);
-
-// Connect window close-request signal
-static gulong connect_window_close_request(GtkWindow *window, gpointer user_data) {
-    return g_signal_connect(G_OBJECT(window), "close-request", G_CALLBACK(go_window_close_request_callback), user_data);
-}
-
-// Button click callback
-extern void go_dialog_button_clicked(GtkButton *button, gpointer user_data);
-
-// Connect button clicked signal for dialog buttons
-static void connect_dialog_button_clicked(GtkButton *button, int response_id, gpointer dialog_ptr) {
-    // Store response ID as user data (we'll cast this back to int in Go)
-    g_signal_connect(G_OBJECT(button), "clicked", G_CALLBACK(go_dialog_button_clicked),
-                     GINT_TO_POINTER(response_id));
-
-    // Set dialog pointer as object data on the button
-    g_object_set_data(G_OBJECT(button), "dialog-ptr", dialog_ptr);
-}
-*/
+// #cgo pkg-config: gtk4
+// #include <gtk/gtk.h>
+// #include <stdlib.h>
+//
+// extern void buttonResponseCallback(GtkButton *button, gpointer user_data);
+// extern gboolean windowCloseCallback(GtkWindow *window, gpointer user_data);
+//
+// static void connectButtonResponse(GtkButton *button, int response_id, gpointer dialog_ptr) {
+//     // Store response ID as object data on the button
+//     g_object_set_data(G_OBJECT(button), "response-id", GINT_TO_POINTER(response_id));
+//
+//     // Store dialog pointer as object data on the button
+//     g_object_set_data(G_OBJECT(button), "dialog-ptr", dialog_ptr);
+//
+//     // Connect the clicked signal
+//     g_signal_connect(button, "clicked", G_CALLBACK(buttonResponseCallback), button);
+// }
+//
+// static void connectWindowClose(GtkWindow *window) {
+//     g_signal_connect(window, "close-request", G_CALLBACK(windowCloseCallback), window);
+// }
 import "C"
 
 import (
 	"fmt"
-	"runtime"
 	"sync"
 	"unsafe"
 )
@@ -83,177 +77,149 @@ type DialogResponseCallback func(responseId ResponseType)
 var (
 	dialogCallbacks     = make(map[uintptr]DialogResponseCallback)
 	dialogCallbackMutex sync.Mutex
-	debug               = false // Set to true to enable debug logging
+	debugLogging        = false // Set to true for debug logs
 )
 
 // Debug logging helper
 func debugLog(format string, args ...interface{}) {
-	if debug {
+	if debugLogging {
 		fmt.Printf("[DEBUG] "+format+"\n", args...)
 	}
 }
 
-// Go callback for window close requests
-//
-//export go_window_close_request_callback
-func go_window_close_request_callback(window *C.GtkWindow, userData C.gpointer) C.gboolean {
+//export buttonResponseCallback
+func buttonResponseCallback(button *C.GtkButton, userData C.gpointer) {
+	// Get response ID from button data
+	responsePtr := C.g_object_get_data((*C.GObject)(unsafe.Pointer(button)), C.CString("response-id"))
+	responseId := ResponseType(uintptr(responsePtr))
+
+	// Get dialog pointer from button data
+	dialogPtr := uintptr(C.g_object_get_data((*C.GObject)(unsafe.Pointer(button)), C.CString("dialog-ptr")))
+
+	debugLog("Button clicked with response %d for dialog %v", responseId, dialogPtr)
+
+	// Look up callback
+	dialogCallbackMutex.Lock()
+	callback, exists := dialogCallbacks[dialogPtr]
+	dialogCallbackMutex.Unlock()
+
+	if exists {
+		// Execute callback in main thread, not in a separate goroutine
+		callback(responseId)
+	}
+}
+
+//export windowCloseCallback
+func windowCloseCallback(window *C.GtkWindow, userData C.gpointer) C.gboolean {
 	windowPtr := uintptr(unsafe.Pointer(window))
 	debugLog("Window close request for %v", windowPtr)
 
+	// Look up callback
 	dialogCallbackMutex.Lock()
 	callback, exists := dialogCallbacks[windowPtr]
 	dialogCallbackMutex.Unlock()
 
 	if exists {
-		debugLog("Found callback for window %v, sending DeleteEvent", windowPtr)
-		// Execute callback outside the mutex lock to prevent deadlocks
+		// Execute callback in main thread
 		callback(ResponseDeleteEvent)
-	} else {
-		debugLog("No callback found for window %v", windowPtr)
 	}
 
 	// Return FALSE to allow the window to close
 	return C.FALSE
 }
 
-// Go callback for dialog button clicks
-//
-//export go_dialog_button_clicked
-func go_dialog_button_clicked(button *C.GtkButton, userData C.gpointer) {
-	// Extract response ID from user data (which is an integer cast to pointer)
-	responseId := ResponseType(uintptr(userData))
-
-	// Get the dialog pointer from the button's object data
-	dialogPtr := uintptr(unsafe.Pointer(C.g_object_get_data(
-		(*C.GObject)(unsafe.Pointer(button)),
-		(*C.gchar)(unsafe.Pointer(C.CString("dialog-ptr"))),
-	)))
-
-	debugLog("Button clicked with response %d for dialog %v", responseId, dialogPtr)
-
-	dialogCallbackMutex.Lock()
-	callback, exists := dialogCallbacks[dialogPtr]
-	dialogCallbackMutex.Unlock()
-
-	if exists {
-		debugLog("Found callback for dialog %v, sending response %d", dialogPtr, responseId)
-		// Execute callback outside the mutex lock to prevent deadlocks
-		callback(responseId)
-	} else {
-		debugLog("No callback found for dialog %v", dialogPtr)
-	}
-}
-
-// Dialog represents a GTK4 dialog window
+// Dialog represents a GTK dialog
 type Dialog struct {
 	Window
 	buttonArea  *Box
 	contentArea *Box
 }
 
-// NewDialog creates a new dialog window
+// NewDialog creates a new dialog
 func NewDialog(title string, parent *Window, flags DialogFlags) *Dialog {
-	// Create a new window
-	var parentPtr *C.GtkWindow
-	if parent != nil {
-		parentPtr = (*C.GtkWindow)(unsafe.Pointer(parent.widget))
-	}
+	// Create base window
+	window := NewWindow(title)
 
-	cTitle := C.CString(title)
-	defer C.free(unsafe.Pointer(cTitle))
-
-	// Create a window with the appropriate properties
-	windowWidget := C.gtk_window_new()
-	C.gtk_window_set_title((*C.GtkWindow)(unsafe.Pointer(windowWidget)), cTitle)
-
-	// Set the window to be modal if requested
+	// Set modal and transient parent
 	if flags&DialogModal != 0 {
-		C.gtk_window_set_modal((*C.GtkWindow)(unsafe.Pointer(windowWidget)), C.TRUE)
+		C.gtk_window_set_modal((*C.GtkWindow)(unsafe.Pointer(window.widget)), C.TRUE)
 	}
 
-	// Set the window to be destroyed with parent if requested
-	if flags&DialogDestroyWithParent != 0 {
-		C.gtk_window_set_destroy_with_parent((*C.GtkWindow)(unsafe.Pointer(windowWidget)), C.TRUE)
-	}
-
-	// Set the transient parent
 	if parent != nil {
-		C.gtk_window_set_transient_for((*C.GtkWindow)(unsafe.Pointer(windowWidget)), parentPtr)
+		C.gtk_window_set_transient_for(
+			(*C.GtkWindow)(unsafe.Pointer(window.widget)),
+			(*C.GtkWindow)(unsafe.Pointer(parent.widget)),
+		)
 	}
 
-	// Create a dialog object
+	if flags&DialogDestroyWithParent != 0 {
+		C.gtk_window_set_destroy_with_parent(
+			(*C.GtkWindow)(unsafe.Pointer(window.widget)),
+			C.TRUE,
+		)
+	}
+
+	// Create a dialog
 	dialog := &Dialog{
-		Window: Window{
-			widget: windowWidget,
-		},
+		Window: *window,
 	}
 
-	// Connect the close request callback
-	windowPtr := uintptr(unsafe.Pointer(windowWidget))
-	C.connect_window_close_request((*C.GtkWindow)(unsafe.Pointer(windowWidget)), C.gpointer(windowPtr))
+	// Connect window close handler
+	C.connectWindowClose((*C.GtkWindow)(unsafe.Pointer(window.widget)))
 
-	// Create a vertical box container for the dialog
+	// Create a box for content
 	mainBox := NewBox(OrientationVertical, 0)
 
-	// Create a content area
+	// Create content area
 	dialog.contentArea = NewBox(OrientationVertical, 10)
 	dialog.contentArea.AddCssClass("dialog-content-area")
 
-	// Add padding to the content area
+	// Create button area
+	dialog.buttonArea = NewBox(OrientationHorizontal, 6)
+	dialog.buttonArea.AddCssClass("dialog-button-area")
+
+	// Set up the button area for dialog buttons
+	dialog.buttonArea.SetHomogeneous(false)
+	C.gtk_widget_set_halign(dialog.buttonArea.widget, C.GTK_ALIGN_END)
+
+	// Add padding
 	C.gtk_widget_set_margin_start(dialog.contentArea.widget, 16)
 	C.gtk_widget_set_margin_end(dialog.contentArea.widget, 16)
 	C.gtk_widget_set_margin_top(dialog.contentArea.widget, 16)
 	C.gtk_widget_set_margin_bottom(dialog.contentArea.widget, 16)
 
-	// Create a button area (horizontal box at the bottom)
-	dialog.buttonArea = NewBox(OrientationHorizontal, 6)
-	dialog.buttonArea.AddCssClass("dialog-button-area")
-
-	// Add CSS for button area to have buttons aligned to the right
-	dialog.buttonArea.SetHomogeneous(false)
-	C.gtk_widget_set_halign(dialog.buttonArea.widget, C.GTK_ALIGN_END)
 	C.gtk_widget_set_margin_start(dialog.buttonArea.widget, 16)
 	C.gtk_widget_set_margin_end(dialog.buttonArea.widget, 16)
-	C.gtk_widget_set_margin_top(dialog.buttonArea.widget, 16)
+	C.gtk_widget_set_margin_top(dialog.buttonArea.widget, 10)
 	C.gtk_widget_set_margin_bottom(dialog.buttonArea.widget, 16)
 
-	// Add the content and button areas to the main box
+	// Add the areas to the main box
 	mainBox.Append(dialog.contentArea)
 	mainBox.Append(dialog.buttonArea)
 
-	// Set the main box as the child of the window
+	// Add the main box to the window
 	dialog.SetChild(mainBox)
 
-	// Set a reasonable default size
-	dialog.SetDefaultSize(350, 150)
-
-	// Set up finalizer for cleanup
-	runtime.SetFinalizer(dialog, (*Dialog).Destroy)
-
-	debugLog("Created new dialog %v", dialog.Native())
+	// Set up default size
+	dialog.SetDefaultSize(400, 200)
 
 	return dialog
 }
 
 // AddButton adds a button to the dialog
 func (d *Dialog) AddButton(text string, responseId ResponseType) *Button {
-	cText := C.CString(text)
-	defer C.free(unsafe.Pointer(cText))
-
-	// Create a button with the given text
+	// Create a button
 	button := NewButton(text)
 
-	// Add the button to the button area
+	// Add it to the button area
 	d.buttonArea.Append(button)
 
-	// Connect the button to trigger the response
-	C.connect_dialog_button_clicked(
+	// Connect button to response using C helper
+	C.connectButtonResponse(
 		(*C.GtkButton)(unsafe.Pointer(button.widget)),
 		C.int(responseId),
 		C.gpointer(unsafe.Pointer(d.widget)),
 	)
-
-	debugLog("Added button with response %d to dialog %v", responseId, d.Native())
 
 	return button
 }
@@ -263,19 +229,12 @@ func (d *Dialog) GetContentArea() *Box {
 	return d.contentArea
 }
 
-// GetButtonArea gets the button area of the dialog
-func (d *Dialog) GetButtonArea() *Box {
-	return d.buttonArea
-}
-
 // ConnectResponse connects a response callback to the dialog
 func (d *Dialog) ConnectResponse(callback DialogResponseCallback) {
-	dialogPtr := d.Native()
-
 	dialogCallbackMutex.Lock()
 	defer dialogCallbackMutex.Unlock()
 
-	// Store the callback
+	dialogPtr := uintptr(unsafe.Pointer(d.widget))
 	dialogCallbacks[dialogPtr] = callback
 
 	debugLog("Connected response callback to dialog %v", dialogPtr)
@@ -283,25 +242,16 @@ func (d *Dialog) ConnectResponse(callback DialogResponseCallback) {
 
 // Destroy overrides Window's Destroy to clean up dialog resources
 func (d *Dialog) Destroy() {
-	dialogPtr := d.Native()
-	debugLog("Destroying dialog %v", dialogPtr)
+	debugLog("Destroying dialog %v", uintptr(unsafe.Pointer(d.widget)))
 
 	dialogCallbackMutex.Lock()
-	// Remove callback
-	delete(dialogCallbacks, dialogPtr)
+	delete(dialogCallbacks, uintptr(unsafe.Pointer(d.widget)))
 	dialogCallbackMutex.Unlock()
 
-	// Call the parent's Destroy method
 	d.Window.Destroy()
 }
 
-// MessageDialog represents a GTK message dialog
-type MessageDialog struct {
-	Dialog
-	messageType MessageType
-}
-
-// MessageType defines the type of message
+// MessageType defines the type of message dialog
 type MessageType int
 
 const (
@@ -317,285 +267,144 @@ const (
 	MessageOther
 )
 
-// ButtonsType defines standard button combinations
-type ButtonsType int
-
-const (
-	// ButtonsNone no buttons
-	ButtonsNone ButtonsType = iota
-	// ButtonsOk OK button
-	ButtonsOk
-	// ButtonsClose Close button
-	ButtonsClose
-	// ButtonsCancel Cancel button
-	ButtonsCancel
-	// ButtonsYesNo Yes and No buttons
-	ButtonsYesNo
-	// ButtonsOkCancel OK and Cancel buttons
-	ButtonsOkCancel
-)
+// MessageDialog represents a GTK message dialog
+type MessageDialog struct {
+	Dialog
+	messageType MessageType
+}
 
 // NewMessageDialog creates a new message dialog
 func NewMessageDialog(parent *Window, flags DialogFlags, messageType MessageType, buttons ResponseType, message string) *MessageDialog {
 	// Create a dialog
-	dialog := &MessageDialog{
-		Dialog:      *NewDialog("", parent, flags),
+	dialog := NewDialog("", parent, flags)
+
+	// Create a message dialog
+	msgDialog := &MessageDialog{
+		Dialog:      *dialog,
 		messageType: messageType,
 	}
 
-	// Set the appropriate CSS class for the message type
+	// Set CSS class based on message type
 	switch messageType {
 	case MessageInfo:
-		dialog.AddCssClass("info-dialog")
+		msgDialog.AddCssClass("info-dialog")
 	case MessageWarning:
-		dialog.AddCssClass("warning-dialog")
+		msgDialog.AddCssClass("warning-dialog")
 	case MessageQuestion:
-		dialog.AddCssClass("question-dialog")
+		msgDialog.AddCssClass("question-dialog")
 	case MessageError:
-		dialog.AddCssClass("error-dialog")
+		msgDialog.AddCssClass("error-dialog")
 	}
 
-	// Add the message to the content area
-	messageLabel := NewLabel(message)
-	messageLabel.AddCssClass("dialog-message")
-	dialog.GetContentArea().Append(messageLabel)
+	// Add message label
+	msgLabel := NewLabel(message)
+	msgLabel.AddCssClass("dialog-message")
+	msgDialog.GetContentArea().Append(msgLabel)
 
-	// Add buttons based on the button type
+	// Add buttons
 	if buttons&ResponseOk != 0 {
-		dialog.AddButton("OK", ResponseOk)
+		msgDialog.AddButton("OK", ResponseOk)
 	}
 	if buttons&ResponseClose != 0 {
-		dialog.AddButton("Close", ResponseClose)
+		msgDialog.AddButton("Close", ResponseClose)
 	}
 	if buttons&ResponseCancel != 0 {
-		dialog.AddButton("Cancel", ResponseCancel)
+		msgDialog.AddButton("Cancel", ResponseCancel)
 	}
 	if buttons&ResponseYes != 0 {
-		dialog.AddButton("Yes", ResponseYes)
+		msgDialog.AddButton("Yes", ResponseYes)
 	}
 	if buttons&ResponseNo != 0 {
-		dialog.AddButton("No", ResponseNo)
+		msgDialog.AddButton("No", ResponseNo)
 	}
 
-	debugLog("Created new message dialog %v with type %d", dialog.Native(), messageType)
-
-	return dialog
+	return msgDialog
 }
 
-// SetMarkup sets the message using markup
-func (d *MessageDialog) SetMarkup(markup string) {
-	// Create a new label with markup
-	messageLabel := NewLabel("")
-	messageLabel.SetMarkup(markup)
-	messageLabel.AddCssClass("dialog-message")
+// FileDialogAction defines the type of file chooser
+type FileDialogAction int
 
-	// Get the content area
-	contentArea := d.GetContentArea()
+const (
+	// FileDialogActionOpen for selecting an existing file
+	FileDialogActionOpen FileDialogAction = iota
+	// FileDialogActionSave for saving a file
+	FileDialogActionSave
+	// FileDialogActionSelectFolder for selecting a folder
+	FileDialogActionSelectFolder
+)
 
-	// Since we don't have direct access to the children, we'll just add the new label
-	contentArea.Append(messageLabel)
-}
-
-// FileDialog represents a file selection dialog
+// FileDialog represents a GTK file chooser dialog
 type FileDialog struct {
 	Dialog
 	fileEntry  *Entry
 	actionType FileDialogAction
 }
 
-// FileDialogAction defines the type of file dialog
-type FileDialogAction int
-
-const (
-	// FileDialogOpen for opening files
-	FileDialogOpen FileDialogAction = iota
-	// FileDialogSave for saving files
-	FileDialogSave
-	// FileDialogSelectFolder for selecting folders
-	FileDialogSelectFolder
-)
-
-// NewFileDialog creates a new file dialog
+// NewFileDialog creates a new file chooser dialog
 func NewFileDialog(title string, parent *Window, action FileDialogAction) *FileDialog {
 	// Create a dialog
-	dialog := &FileDialog{
-		Dialog:     *NewDialog(title, parent, DialogModal),
+	dialog := NewDialog(title, parent, DialogModal)
+
+	// Create a file dialog
+	fileDialog := &FileDialog{
+		Dialog:     *dialog,
 		actionType: action,
 	}
 
-	// Add content for file selection
-	contentArea := dialog.GetContentArea()
+	// Add content
+	contentArea := fileDialog.GetContentArea()
 
-	// Create a label
+	// Add label based on action
 	var labelText string
 	switch action {
-	case FileDialogOpen:
+	case FileDialogActionOpen:
 		labelText = "Select a file to open:"
-	case FileDialogSave:
+	case FileDialogActionSave:
 		labelText = "Save file as:"
-	case FileDialogSelectFolder:
+	case FileDialogActionSelectFolder:
 		labelText = "Select folder:"
 	}
 
 	fileLabel := NewLabel(labelText)
 	contentArea.Append(fileLabel)
 
-	// Create an entry for the file path
-	dialog.fileEntry = NewEntry()
+	// Add entry for file path
+	fileDialog.fileEntry = NewEntry()
 
-	// Set placeholder text based on action
+	// Set placeholder text
 	switch action {
-	case FileDialogOpen:
-		dialog.fileEntry.SetPlaceholderText("File path")
-	case FileDialogSave:
-		dialog.fileEntry.SetPlaceholderText("Enter filename")
-	case FileDialogSelectFolder:
-		dialog.fileEntry.SetPlaceholderText("Folder path")
+	case FileDialogActionOpen:
+		fileDialog.fileEntry.SetPlaceholderText("File path")
+	case FileDialogActionSave:
+		fileDialog.fileEntry.SetPlaceholderText("Enter filename")
+	case FileDialogActionSelectFolder:
+		fileDialog.fileEntry.SetPlaceholderText("Folder path")
 	}
 
-	contentArea.Append(dialog.fileEntry)
+	contentArea.Append(fileDialog.fileEntry)
 
 	// Add appropriate buttons
 	switch action {
-	case FileDialogOpen:
-		dialog.AddButton("Cancel", ResponseCancel)
-		dialog.AddButton("Open", ResponseAccept)
-	case FileDialogSave:
-		dialog.AddButton("Cancel", ResponseCancel)
-		dialog.AddButton("Save", ResponseAccept)
-	case FileDialogSelectFolder:
-		dialog.AddButton("Cancel", ResponseCancel)
-		dialog.AddButton("Select", ResponseAccept)
+	case FileDialogActionOpen:
+		fileDialog.AddButton("Cancel", ResponseCancel)
+		fileDialog.AddButton("Open", ResponseAccept)
+	case FileDialogActionSave:
+		fileDialog.AddButton("Cancel", ResponseCancel)
+		fileDialog.AddButton("Save", ResponseAccept)
+	case FileDialogActionSelectFolder:
+		fileDialog.AddButton("Cancel", ResponseCancel)
+		fileDialog.AddButton("Select", ResponseAccept)
 	}
 
-	debugLog("Created new file dialog %v with action %d", dialog.Native(), action)
-
-	return dialog
+	return fileDialog
 }
 
-// GetFilename gets the filename from the entry
+// GetFilename gets the filename from the file dialog
 func (d *FileDialog) GetFilename() string {
 	return d.fileEntry.GetText()
 }
 
-// SetFilename sets the filename in the entry
+// SetFilename sets the filename in the file dialog
 func (d *FileDialog) SetFilename(filename string) {
 	d.fileEntry.SetText(filename)
-}
-
-// Convenience Functions
-
-// ShowMessageDialog shows a message dialog and returns the response
-func ShowMessageDialog(parent *Window, messageType MessageType, title, message string) ResponseType {
-	dialog := NewMessageDialog(parent, DialogModal, messageType, ResponseOk, message)
-	dialog.SetTitle(title)
-	dialog.Show()
-
-	var response ResponseType
-	done := make(chan bool)
-
-	dialog.ConnectResponse(func(responseId ResponseType) {
-		debugLog("Message dialog response: %d", responseId)
-		response = responseId
-		dialog.Destroy()
-		done <- true
-	})
-
-	<-done
-	return response
-}
-
-// ShowConfirmDialog shows a confirmation dialog and returns true if confirmed
-func ShowConfirmDialog(parent *Window, title, message string) bool {
-	dialog := NewMessageDialog(parent, DialogModal, MessageQuestion, ResponseYes|ResponseNo, message)
-	dialog.SetTitle(title)
-	dialog.Show()
-
-	var confirmed bool
-	done := make(chan bool)
-
-	dialog.ConnectResponse(func(responseId ResponseType) {
-		debugLog("Confirm dialog response: %d", responseId)
-		confirmed = (responseId == ResponseYes)
-		dialog.Destroy()
-		done <- true
-	})
-
-	<-done
-	return confirmed
-}
-
-// ShowFileOpenDialog shows a file open dialog and returns the selected filename
-func ShowFileOpenDialog(parent *Window, title string) (string, bool) {
-	dialog := NewFileDialog(title, parent, FileDialogOpen)
-	dialog.Show()
-
-	var filename string
-	var selected bool
-	done := make(chan bool)
-
-	dialog.ConnectResponse(func(responseId ResponseType) {
-		debugLog("File open dialog response: %d", responseId)
-		if responseId == ResponseAccept {
-			filename = dialog.GetFilename()
-			selected = true
-		} else {
-			selected = false
-		}
-		dialog.Destroy()
-		done <- true
-	})
-
-	<-done
-	return filename, selected
-}
-
-// ShowFileSaveDialog shows a file save dialog and returns the selected filename
-func ShowFileSaveDialog(parent *Window, title string) (string, bool) {
-	dialog := NewFileDialog(title, parent, FileDialogSave)
-	dialog.Show()
-
-	var filename string
-	var selected bool
-	done := make(chan bool)
-
-	dialog.ConnectResponse(func(responseId ResponseType) {
-		debugLog("File save dialog response: %d", responseId)
-		if responseId == ResponseAccept {
-			filename = dialog.GetFilename()
-			selected = true
-		} else {
-			selected = false
-		}
-		dialog.Destroy()
-		done <- true
-	})
-
-	<-done
-	return filename, selected
-}
-
-// ShowFolderSelectDialog shows a folder selection dialog and returns the selected folder
-func ShowFolderSelectDialog(parent *Window, title string) (string, bool) {
-	dialog := NewFileDialog(title, parent, FileDialogSelectFolder)
-	dialog.Show()
-
-	var folder string
-	var selected bool
-	done := make(chan bool)
-
-	dialog.ConnectResponse(func(responseId ResponseType) {
-		debugLog("Folder select dialog response: %d", responseId)
-		if responseId == ResponseAccept {
-			folder = dialog.GetFilename()
-			selected = true
-		} else {
-			selected = false
-		}
-		dialog.Destroy()
-		done <- true
-	})
-
-	<-done
-	return folder, selected
 }

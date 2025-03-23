@@ -128,22 +128,13 @@ func main() {
 		dialog.SetTitle("Greeting")
 
 		// Connect response handler before showing the dialog
-		responseChan := make(chan bool)
-
 		dialog.ConnectResponse(func(responseId gtk4.ResponseType) {
 			fmt.Printf("Dialog response: %d\n", responseId)
-			dialog.Destroy()
-			responseChan <- true
+			dialog.Destroy() // Destroy the dialog when done
 		})
 
 		// Show the dialog
 		dialog.Show()
-
-		// Wait for response in a goroutine to not block the UI
-		go func() {
-			<-responseChan
-			fmt.Println("Dialog closed")
-		}()
 
 		resultLbl.SetText(fmt.Sprintf("Hello, %s!", name))
 	})
@@ -173,23 +164,14 @@ func main() {
 		// Add OK button to the dialog
 		dialog.AddButton("OK", gtk4.ResponseOk)
 
-		// Connect response handler before showing the dialog
-		responseChan := make(chan bool)
-
+		// Connect response handler
 		dialog.ConnectResponse(func(responseId gtk4.ResponseType) {
 			fmt.Printf("About dialog response: %d\n", responseId)
 			dialog.Destroy()
-			responseChan <- true
 		})
 
 		// Show the dialog
 		dialog.Show()
-
-		// Wait for response in a goroutine to not block the UI
-		go func() {
-			<-responseChan
-			fmt.Println("About dialog closed")
-		}()
 	})
 
 	// Connect file button click event
@@ -205,71 +187,38 @@ func main() {
 		confirmDialog.SetTitle("Confirm Action")
 
 		// Connect response handler for the confirmation dialog
-		confirmChan := make(chan bool)
-		var confirmed bool
-
 		confirmDialog.ConnectResponse(func(responseId gtk4.ResponseType) {
 			fmt.Printf("Confirm dialog response: %d\n", responseId)
-			confirmed = (responseId == gtk4.ResponseYes)
+			confirmed := (responseId == gtk4.ResponseYes)
 			confirmDialog.Destroy()
-			confirmChan <- true
-		})
-
-		// Show the confirmation dialog
-		confirmDialog.Show()
-
-		// Wait for confirmation response and then potentially show file dialog
-		go func() {
-			<-confirmChan
-			fmt.Println("Confirm dialog closed, confirmed:", confirmed)
 
 			if confirmed {
 				// Create file open dialog
-				fileDialog := gtk4.NewFileDialog("Select a File", win, gtk4.FileDialogOpen)
+				fileDialog := gtk4.NewFileDialog("Select a File", win, gtk4.FileDialogActionOpen)
 
 				// Connect response handler for the file dialog
-				fileChan := make(chan bool)
-				var selectedFilename string
-
 				fileDialog.ConnectResponse(func(responseId gtk4.ResponseType) {
 					fmt.Printf("File dialog response: %d\n", responseId)
 					if responseId == gtk4.ResponseAccept {
-						selectedFilename = fileDialog.GetFilename()
-						if selectedFilename != "" {
-							// This updates the UI with the selected filename
-							resultLbl.SetText(fmt.Sprintf("Selected file: %s", selectedFilename))
+						filename := fileDialog.GetFilename()
+						if filename != "" {
+							// Update UI
+							resultLbl.SetText(fmt.Sprintf("Selected file: %s", filename))
 
-							// Print to the console/terminal
-							fmt.Printf("User selected file: %s\n", selectedFilename)
-
-							// Here you could also process the file if needed
-							// For example, read its contents:
-							// fileContent, err := os.ReadFile(selectedFilename)
-							// if err == nil {
-							//     fmt.Printf("File content: %s\n", string(fileContent))
-							// }
+							// Log the selection
+							fmt.Printf("Selected file: %s\n", filename)
 						}
 					}
 					fileDialog.Destroy()
-					fileChan <- true
 				})
 
 				// Show the file dialog
 				fileDialog.Show()
-
-				// Wait for file dialog response
-				go func() {
-					<-fileChan
-					fmt.Println("File dialog closed")
-					if selectedFilename != "" {
-						fmt.Printf("Selected file path: %s\n", selectedFilename)
-
-						// You could trigger additional processing here
-						// processFile(selectedFilename)
-					}
-				}()
 			}
-		}()
+		})
+
+		// Show the confirmation dialog
+		confirmDialog.Show()
 	})
 
 	// Create a horizontal button box for the buttons

@@ -63,34 +63,57 @@ func entryActivateCallback(entry *C.GtkEntry, userData C.gpointer) {
 	}
 }
 
+// EntryOption is a function that configures an entry
+type EntryOption func(*Entry)
+
 // Entry represents a GTK entry widget for text input
 type Entry struct {
-	widget *C.GtkWidget
+	BaseWidget
 }
 
 // NewEntry creates a new GTK entry widget
-func NewEntry() *Entry {
+func NewEntry(options ...EntryOption) *Entry {
 	entry := &Entry{
-		widget: C.gtk_entry_new(),
+		BaseWidget: BaseWidget{
+			widget: C.gtk_entry_new(),
+		},
 	}
-	runtime.SetFinalizer(entry, (*Entry).Destroy)
+
+	// Apply options
+	for _, option := range options {
+		option(entry)
+	}
+
+	SetupFinalization(entry, entry.Destroy)
 	return entry
 }
 
-// NewEntryWithBuffer creates a new GTK entry widget with a specific buffer
-func NewEntryWithBuffer(buffer *EntryBuffer) *Entry {
-	entry := &Entry{
-		widget: C.gtk_entry_new_with_buffer((*C.GtkEntryBuffer)(unsafe.Pointer(buffer.buffer))),
+// WithEntryBuffer creates an entry with a specific buffer
+func WithEntryBuffer(buffer *EntryBuffer) EntryOption {
+	return func(e *Entry) {
+		e.widget = C.gtk_entry_new_with_buffer(buffer.buffer)
 	}
-	runtime.SetFinalizer(entry, (*Entry).Destroy)
-	return entry
+}
+
+// WithPlaceholderText sets placeholder text
+func WithPlaceholderText(text string) EntryOption {
+	return func(e *Entry) {
+		e.SetPlaceholderText(text)
+	}
+}
+
+// WithEditable sets whether the entry is editable
+func WithEditable(editable bool) EntryOption {
+	return func(e *Entry) {
+		e.SetEditable(editable)
+	}
 }
 
 // SetText sets the text in the entry
 func (e *Entry) SetText(text string) {
-	cText := C.CString(text)
-	defer C.free(unsafe.Pointer(cText))
-	C.gtk_editable_set_text((*C.GtkEditable)(unsafe.Pointer(e.widget)), cText)
+	WithCString(text, func(cText *C.char) {
+		C.gtk_editable_set_text((*C.GtkEditable)(unsafe.Pointer(e.widget)), cText)
+	})
 }
 
 // GetText gets the text from the entry
@@ -104,9 +127,9 @@ func (e *Entry) GetText() string {
 
 // SetPlaceholderText sets the placeholder text shown when the entry is empty
 func (e *Entry) SetPlaceholderText(text string) {
-	cText := C.CString(text)
-	defer C.free(unsafe.Pointer(cText))
-	C.gtk_entry_set_placeholder_text((*C.GtkEntry)(unsafe.Pointer(e.widget)), cText)
+	WithCString(text, func(cText *C.char) {
+		C.gtk_entry_set_placeholder_text((*C.GtkEntry)(unsafe.Pointer(e.widget)), cText)
+	})
 }
 
 // GetPlaceholderText gets the placeholder text
@@ -120,38 +143,24 @@ func (e *Entry) GetPlaceholderText() string {
 
 // SetEditable sets whether the user can edit the text
 func (e *Entry) SetEditable(editable bool) {
+	var ceditable C.gboolean
 	if editable {
-		C.gtk_editable_set_editable((*C.GtkEditable)(unsafe.Pointer(e.widget)), C.TRUE)
+		ceditable = C.TRUE
 	} else {
-		C.gtk_editable_set_editable((*C.GtkEditable)(unsafe.Pointer(e.widget)), C.FALSE)
+		ceditable = C.FALSE
 	}
+	C.gtk_editable_set_editable((*C.GtkEditable)(unsafe.Pointer(e.widget)), ceditable)
 }
 
 // SetVisibility sets whether the text is visible or hidden (e.g., for passwords)
 func (e *Entry) SetVisibility(visible bool) {
+	var cvisible C.gboolean
 	if visible {
-		C.gtk_entry_set_visibility((*C.GtkEntry)(unsafe.Pointer(e.widget)), C.TRUE)
+		cvisible = C.TRUE
 	} else {
-		C.gtk_entry_set_visibility((*C.GtkEntry)(unsafe.Pointer(e.widget)), C.FALSE)
+		cvisible = C.FALSE
 	}
-}
-
-// SetMaxLength sets the maximum allowed length of the text
-func (e *Entry) SetMaxLength(max int) {
-	C.gtk_entry_set_max_length((*C.GtkEntry)(unsafe.Pointer(e.widget)), C.int(max))
-}
-
-// GetBuffer gets the entry buffer
-func (e *Entry) GetBuffer() *EntryBuffer {
-	buffer := C.gtk_entry_get_buffer((*C.GtkEntry)(unsafe.Pointer(e.widget)))
-	return &EntryBuffer{
-		buffer: buffer,
-	}
-}
-
-// SetBuffer sets the entry buffer
-func (e *Entry) SetBuffer(buffer *EntryBuffer) {
-	C.gtk_entry_set_buffer((*C.GtkEntry)(unsafe.Pointer(e.widget)), buffer.buffer)
+	C.gtk_entry_set_visibility((*C.GtkEntry)(unsafe.Pointer(e.widget)), cvisible)
 }
 
 // ConnectChanged connects a callback function to the entry's "changed" signal
@@ -167,7 +176,7 @@ func (e *Entry) ConnectChanged(callback EntryCallback) {
 	C.connectEntryChanged(e.widget, C.gpointer(unsafe.Pointer(e.widget)))
 }
 
-// ConnectActivate connects a callback function to the entry's "activate" signal (when Enter is pressed)
+// ConnectActivate connects a callback function to the entry's "activate" signal
 func (e *Entry) ConnectActivate(callback EntryCallback) {
 	entryCallbackMutex.Lock()
 	defer entryCallbackMutex.Unlock()
@@ -180,17 +189,7 @@ func (e *Entry) ConnectActivate(callback EntryCallback) {
 	C.connectEntryActivate(e.widget, C.gpointer(unsafe.Pointer(e.widget)))
 }
 
-// SetInputPurpose sets the purpose of the entry (e.g., password, URL, etc.)
-func (e *Entry) SetInputPurpose(purpose InputPurpose) {
-	C.gtk_entry_set_input_purpose((*C.GtkEntry)(unsafe.Pointer(e.widget)), C.GtkInputPurpose(purpose))
-}
-
-// SetInputHints sets input hints for the entry
-func (e *Entry) SetInputHints(hints InputHints) {
-	C.gtk_entry_set_input_hints((*C.GtkEntry)(unsafe.Pointer(e.widget)), C.GtkInputHints(hints))
-}
-
-// Destroy destroys the entry
+// Destroy destroys the entry and cleans up resources
 func (e *Entry) Destroy() {
 	entryCallbackMutex.Lock()
 	defer entryCallbackMutex.Unlock()
@@ -200,19 +199,8 @@ func (e *Entry) Destroy() {
 	delete(entryChangedCallbacks, entryPtr)
 	delete(entryActivateCallbacks, entryPtr)
 
-	// Destroy widget
-	C.gtk_widget_unparent(e.widget)
-	e.widget = nil
-}
-
-// Native returns the underlying GtkWidget pointer
-func (e *Entry) Native() uintptr {
-	return uintptr(unsafe.Pointer(e.widget))
-}
-
-// GetWidget returns the underlying GtkWidget pointer
-func (e *Entry) GetWidget() *C.GtkWidget {
-	return e.widget
+	// Call base destroy method
+	e.BaseWidget.Destroy()
 }
 
 // EntryBuffer represents a GTK entry buffer
@@ -222,21 +210,29 @@ type EntryBuffer struct {
 
 // NewEntryBuffer creates a new entry buffer with initial text
 func NewEntryBuffer(initialText string) *EntryBuffer {
-	cText := C.CString(initialText)
-	defer C.free(unsafe.Pointer(cText))
+	var buffer *C.GtkEntryBuffer
 
-	buffer := &EntryBuffer{
-		buffer: C.gtk_entry_buffer_new(cText, C.int(len(initialText))),
+	WithCString(initialText, func(cText *C.char) {
+		buffer = C.gtk_entry_buffer_new(cText, C.int(len(initialText)))
+	})
+
+	entryBuffer := &EntryBuffer{
+		buffer: buffer,
 	}
-	runtime.SetFinalizer(buffer, (*EntryBuffer).Free)
-	return buffer
+
+	// Use a simple finalizer
+	runtime.SetFinalizer(entryBuffer, func(b *EntryBuffer) {
+		b.Free()
+	})
+
+	return entryBuffer
 }
 
 // SetText sets the text in the buffer
 func (b *EntryBuffer) SetText(text string) {
-	cText := C.CString(text)
-	defer C.free(unsafe.Pointer(cText))
-	C.gtk_entry_buffer_set_text(b.buffer, cText, C.int(len(text)))
+	WithCString(text, func(cText *C.char) {
+		C.gtk_entry_buffer_set_text(b.buffer, cText, C.int(len(text)))
+	})
 }
 
 // GetText gets the text from the buffer
@@ -255,8 +251,10 @@ func (b *EntryBuffer) GetLength() int {
 
 // Free frees the buffer
 func (b *EntryBuffer) Free() {
-	C.g_object_unref(C.gpointer(unsafe.Pointer(b.buffer)))
-	b.buffer = nil
+	if b.buffer != nil {
+		C.g_object_unref(C.gpointer(unsafe.Pointer(b.buffer)))
+		b.buffer = nil
+	}
 }
 
 // InputPurpose defines the purpose of an entry

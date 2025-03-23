@@ -8,57 +8,76 @@ package gtk4
 import "C"
 
 import (
-	"runtime"
 	"unsafe"
 )
 
+// LabelOption is a function that configures a label
+type LabelOption func(*Label)
+
 // Label represents a GTK label
 type Label struct {
-	widget *C.GtkWidget
+	BaseWidget
 }
 
 // NewLabel creates a new GTK label with the given text
-func NewLabel(text string) *Label {
-	cText := C.CString(text)
-	defer C.free(unsafe.Pointer(cText))
+func NewLabel(text string, options ...LabelOption) *Label {
+	var widget *C.GtkWidget
+
+	WithCString(text, func(cText *C.char) {
+		widget = C.gtk_label_new(cText)
+	})
 
 	label := &Label{
-		widget: C.gtk_label_new(cText),
+		BaseWidget: BaseWidget{
+			widget: widget,
+		},
 	}
-	runtime.SetFinalizer(label, (*Label).Destroy)
+
+	// Apply options
+	for _, option := range options {
+		option(label)
+	}
+
+	SetupFinalization(label, label.Destroy)
 	return label
+}
+
+// WithMarkup configures a label to use markup
+func WithMarkup(markup string) LabelOption {
+	return func(l *Label) {
+		l.SetMarkup(markup)
+	}
+}
+
+// WithSelectable makes the label selectable
+func WithSelectable(selectable bool) LabelOption {
+	return func(l *Label) {
+		var cselectable C.gboolean
+		if selectable {
+			cselectable = C.TRUE
+		} else {
+			cselectable = C.FALSE
+		}
+		C.gtk_label_set_selectable((*C.GtkLabel)(unsafe.Pointer(l.widget)), cselectable)
+	}
 }
 
 // SetText sets the label text
 func (l *Label) SetText(text string) {
-	cText := C.CString(text)
-	defer C.free(unsafe.Pointer(cText))
-	C.gtk_label_set_text((*C.GtkLabel)(unsafe.Pointer(l.widget)), cText)
+	WithCString(text, func(cText *C.char) {
+		C.gtk_label_set_text((*C.GtkLabel)(unsafe.Pointer(l.widget)), cText)
+	})
 }
 
 // SetMarkup sets the label markup
 func (l *Label) SetMarkup(markup string) {
-	cMarkup := C.CString(markup)
-	defer C.free(unsafe.Pointer(cMarkup))
-	C.gtk_label_set_markup((*C.GtkLabel)(unsafe.Pointer(l.widget)), cMarkup)
+	WithCString(markup, func(cMarkup *C.char) {
+		C.gtk_label_set_markup((*C.GtkLabel)(unsafe.Pointer(l.widget)), cMarkup)
+	})
 }
 
-// Destroy destroys the label
-func (l *Label) Destroy() {
-	// Instead of using gtk_widget_destroy directly, use a safer approach for GTK4
-	if l.widget != nil {
-		// Using gtk_widget_unparent as a safer alternative in GTK4
-		C.gtk_widget_unparent(l.widget)
-		l.widget = nil
-	}
-}
-
-// Native returns the underlying GtkWidget pointer
-func (l *Label) Native() uintptr {
-	return uintptr(unsafe.Pointer(l.widget))
-}
-
-// GetWidget returns the underlying GtkWidget pointer
-func (l *Label) GetWidget() *C.GtkWidget {
-	return l.widget
+// GetText gets the label text
+func (l *Label) GetText() string {
+	cText := C.gtk_label_get_text((*C.GtkLabel)(unsafe.Pointer(l.widget)))
+	return C.GoString(cText)
 }

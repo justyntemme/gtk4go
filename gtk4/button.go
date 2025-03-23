@@ -16,7 +16,6 @@ package gtk4
 import "C"
 
 import (
-	"runtime"
 	"sync"
 	"unsafe"
 )
@@ -43,40 +42,51 @@ func buttonClickedCallback(button *C.GtkButton, userData C.gpointer) {
 	}
 }
 
+// ButtonOption is a function that configures a button
+type ButtonOption func(*Button)
+
 // Button represents a GTK button
 type Button struct {
-	widget *C.GtkWidget
+	BaseWidget
 }
 
 // NewButton creates a new GTK button with the given label
-func NewButton(label string) *Button {
-	cLabel := C.CString(label)
-	defer C.free(unsafe.Pointer(cLabel))
+func NewButton(label string, options ...ButtonOption) *Button {
+	var widget *C.GtkWidget
+
+	WithCString(label, func(cLabel *C.char) {
+		widget = C.gtk_button_new_with_label(cLabel)
+	})
 
 	button := &Button{
-		widget: C.gtk_button_new_with_label(cLabel),
+		BaseWidget: BaseWidget{
+			widget: widget,
+		},
 	}
-	runtime.SetFinalizer(button, (*Button).Destroy)
+
+	// Apply options
+	for _, option := range options {
+		option(button)
+	}
+
+	SetupFinalization(button, button.Destroy)
 	return button
 }
 
-// NewButtonWithMnemonic creates a new GTK button with a mnemonic label
-func NewButtonWithMnemonic(label string) *Button {
-	cLabel := C.CString(label)
-	defer C.free(unsafe.Pointer(cLabel))
-
-	button := &Button{
-		widget: C.gtk_button_new_with_mnemonic(cLabel),
+// WithMnemonic creates a button with mnemonic support
+func WithMnemonic(label string) ButtonOption {
+	return func(b *Button) {
+		WithCString(label, func(cLabel *C.char) {
+			b.widget = C.gtk_button_new_with_mnemonic(cLabel)
+		})
 	}
-	runtime.SetFinalizer(button, (*Button).Destroy)
-	return button
 }
 
 // SetLabel sets the button's label
 func (b *Button) SetLabel(label string) {
-	cLabel := C.CString(label)
-	defer C.free(unsafe.Pointer(cLabel))
-	C.gtk_button_set_label((*C.GtkButton)(unsafe.Pointer(b.widget)), cLabel)
+	WithCString(label, func(cLabel *C.char) {
+		C.gtk_button_set_label((*C.GtkButton)(unsafe.Pointer(b.widget)), cLabel)
+	})
 }
 
 // GetLabel gets the button's label
@@ -98,7 +108,7 @@ func (b *Button) ConnectClicked(callback ButtonClickedCallback) {
 	C.connectButtonClicked(b.widget, C.gpointer(unsafe.Pointer(b.widget)))
 }
 
-// Destroy destroys the button
+// Destroy destroys the button and cleans up resources
 func (b *Button) Destroy() {
 	buttonCallbackMutex.Lock()
 	defer buttonCallbackMutex.Unlock()
@@ -107,17 +117,6 @@ func (b *Button) Destroy() {
 	buttonPtr := uintptr(unsafe.Pointer(b.widget))
 	delete(buttonCallbacks, buttonPtr)
 
-	// Destroy widget
-	C.gtk_widget_unparent(b.widget)
-	b.widget = nil
-}
-
-// Native returns the underlying GtkWidget pointer
-func (b *Button) Native() uintptr {
-	return uintptr(unsafe.Pointer(b.widget))
-}
-
-// GetWidget returns the underlying GtkWidget pointer
-func (b *Button) GetWidget() *C.GtkWidget {
-	return b.widget
+	// Call base destroy method
+	b.BaseWidget.Destroy()
 }

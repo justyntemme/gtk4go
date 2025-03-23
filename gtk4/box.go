@@ -8,7 +8,6 @@ package gtk4
 import "C"
 
 import (
-	"runtime"
 	"unsafe"
 )
 
@@ -22,39 +21,64 @@ const (
 	OrientationVertical Orientation = C.GTK_ORIENTATION_VERTICAL
 )
 
+// BoxOption is a function that configures a box
+type BoxOption func(*Box)
+
 // Box represents a GTK box container
 type Box struct {
-	widget *C.GtkWidget
+	BaseWidget
 }
 
 // NewBox creates a new GTK box with the given orientation
-func NewBox(orientation Orientation, spacing int) *Box {
+func NewBox(orientation Orientation, spacing int, options ...BoxOption) *Box {
 	box := &Box{
-		widget: C.gtk_box_new(C.GtkOrientation(orientation), C.int(spacing)),
+		BaseWidget: BaseWidget{
+			widget: C.gtk_box_new(C.GtkOrientation(orientation), C.int(spacing)),
+		},
 	}
-	runtime.SetFinalizer(box, (*Box).Destroy)
+
+	// Apply options
+	for _, option := range options {
+		option(box)
+	}
+
+	SetupFinalization(box, box.Destroy)
 	return box
 }
 
-// Append adds a widget to the end of the box
-func (b *Box) Append(child interface{}) {
-	if c, ok := child.(interface{ GetWidget() *C.GtkWidget }); ok {
-		C.gtk_box_append((*C.GtkBox)(unsafe.Pointer(b.widget)), c.GetWidget())
+// WithSpacing sets the spacing between children
+func WithSpacing(spacing int) BoxOption {
+	return func(b *Box) {
+		C.gtk_box_set_spacing((*C.GtkBox)(unsafe.Pointer(b.widget)), C.int(spacing))
 	}
+}
+
+// WithHomogeneous sets whether all children get the same space
+func WithHomogeneous(homogeneous bool) BoxOption {
+	return func(b *Box) {
+		var chomogeneous C.gboolean
+		if homogeneous {
+			chomogeneous = C.TRUE
+		} else {
+			chomogeneous = C.FALSE
+		}
+		C.gtk_box_set_homogeneous((*C.GtkBox)(unsafe.Pointer(b.widget)), chomogeneous)
+	}
+}
+
+// Append adds a widget to the end of the box
+func (b *Box) Append(child Widget) {
+	C.gtk_box_append((*C.GtkBox)(unsafe.Pointer(b.widget)), child.GetWidget())
 }
 
 // Prepend adds a widget to the start of the box
-func (b *Box) Prepend(child interface{}) {
-	if c, ok := child.(interface{ GetWidget() *C.GtkWidget }); ok {
-		C.gtk_box_prepend((*C.GtkBox)(unsafe.Pointer(b.widget)), c.GetWidget())
-	}
+func (b *Box) Prepend(child Widget) {
+	C.gtk_box_prepend((*C.GtkBox)(unsafe.Pointer(b.widget)), child.GetWidget())
 }
 
 // Remove removes a widget from the box
-func (b *Box) Remove(child interface{}) {
-	if c, ok := child.(interface{ GetWidget() *C.GtkWidget }); ok {
-		C.gtk_box_remove((*C.GtkBox)(unsafe.Pointer(b.widget)), c.GetWidget())
-	}
+func (b *Box) Remove(child Widget) {
+	C.gtk_box_remove((*C.GtkBox)(unsafe.Pointer(b.widget)), child.GetWidget())
 }
 
 // SetSpacing sets the spacing between children
@@ -64,25 +88,11 @@ func (b *Box) SetSpacing(spacing int) {
 
 // SetHomogeneous sets whether all children get the same space
 func (b *Box) SetHomogeneous(homogeneous bool) {
-	boolVal := C.gboolean(0)
+	var chomogeneous C.gboolean
 	if homogeneous {
-		boolVal = C.gboolean(1)
+		chomogeneous = C.TRUE
+	} else {
+		chomogeneous = C.FALSE
 	}
-	C.gtk_box_set_homogeneous((*C.GtkBox)(unsafe.Pointer(b.widget)), boolVal)
-}
-
-// Destroy destroys the box
-func (b *Box) Destroy() {
-	C.gtk_widget_unparent(b.widget)
-	b.widget = nil
-}
-
-// Native returns the underlying GtkWidget pointer
-func (b *Box) Native() uintptr {
-	return uintptr(unsafe.Pointer(b.widget))
-}
-
-// GetWidget returns the underlying GtkWidget pointer
-func (b *Box) GetWidget() *C.GtkWidget {
-	return b.widget
+	C.gtk_box_set_homogeneous((*C.GtkBox)(unsafe.Pointer(b.widget)), chomogeneous)
 }
