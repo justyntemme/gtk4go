@@ -32,13 +32,13 @@ type EntryCallback func()
 var (
 	entryChangedCallbacks  = make(map[uintptr]EntryCallback)
 	entryActivateCallbacks = make(map[uintptr]EntryCallback)
-	entryCallbackMutex     sync.Mutex
+	entryCallbackMutex     sync.RWMutex
 )
 
 //export entryChangedCallback
 func entryChangedCallback(editable *C.GtkEditable, userData C.gpointer) {
-	entryCallbackMutex.Lock()
-	defer entryCallbackMutex.Unlock()
+	entryCallbackMutex.RLock()
+	defer entryCallbackMutex.RUnlock()
 
 	// Convert entry pointer to uintptr for lookup
 	entryPtr := uintptr(unsafe.Pointer(editable))
@@ -51,8 +51,8 @@ func entryChangedCallback(editable *C.GtkEditable, userData C.gpointer) {
 
 //export entryActivateCallback
 func entryActivateCallback(entry *C.GtkEntry, userData C.gpointer) {
-	entryCallbackMutex.Lock()
-	defer entryCallbackMutex.Unlock()
+	entryCallbackMutex.RLock()
+	defer entryCallbackMutex.RUnlock()
 
 	// Convert entry pointer to uintptr for lookup
 	entryPtr := uintptr(unsafe.Pointer(entry))
@@ -176,6 +176,16 @@ func (e *Entry) ConnectChanged(callback EntryCallback) {
 	C.connectEntryChanged(e.widget, C.gpointer(unsafe.Pointer(e.widget)))
 }
 
+// DisconnectChanged disconnects the changed signal handler
+func (e *Entry) DisconnectChanged() {
+	entryCallbackMutex.Lock()
+	defer entryCallbackMutex.Unlock()
+
+	// Remove callback from map
+	entryPtr := uintptr(unsafe.Pointer(e.widget))
+	delete(entryChangedCallbacks, entryPtr)
+}
+
 // ConnectActivate connects a callback function to the entry's "activate" signal
 func (e *Entry) ConnectActivate(callback EntryCallback) {
 	entryCallbackMutex.Lock()
@@ -187,6 +197,16 @@ func (e *Entry) ConnectActivate(callback EntryCallback) {
 
 	// Connect signal
 	C.connectEntryActivate(e.widget, C.gpointer(unsafe.Pointer(e.widget)))
+}
+
+// DisconnectActivate disconnects the activate signal handler
+func (e *Entry) DisconnectActivate() {
+	entryCallbackMutex.Lock()
+	defer entryCallbackMutex.Unlock()
+
+	// Remove callback from map
+	entryPtr := uintptr(unsafe.Pointer(e.widget))
+	delete(entryActivateCallbacks, entryPtr)
 }
 
 // Destroy destroys the entry and cleans up resources

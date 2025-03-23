@@ -76,7 +76,7 @@ type DialogResponseCallback func(responseId ResponseType)
 
 var (
 	dialogCallbacks     = make(map[uintptr]DialogResponseCallback)
-	dialogCallbackMutex sync.Mutex
+	dialogCallbackMutex sync.RWMutex
 	debugLogging        = false // Set to true for debug logs
 )
 
@@ -99,9 +99,9 @@ func buttonResponseCallback(button *C.GtkButton, userData C.gpointer) {
 	debugLog("Button clicked with response %d for dialog %v", responseId, dialogPtr)
 
 	// Look up callback
-	dialogCallbackMutex.Lock()
+	dialogCallbackMutex.RLock()
 	callback, exists := dialogCallbacks[dialogPtr]
-	dialogCallbackMutex.Unlock()
+	dialogCallbackMutex.RUnlock()
 
 	if exists {
 		// Execute callback in main thread, not in a separate goroutine
@@ -115,9 +115,9 @@ func windowCloseCallback(window *C.GtkWindow, userData C.gpointer) C.gboolean {
 	debugLog("Window close request for %v", windowPtr)
 
 	// Look up callback
-	dialogCallbackMutex.Lock()
+	dialogCallbackMutex.RLock()
 	callback, exists := dialogCallbacks[windowPtr]
-	dialogCallbackMutex.Unlock()
+	dialogCallbackMutex.RUnlock()
 
 	if exists {
 		// Execute callback in main thread

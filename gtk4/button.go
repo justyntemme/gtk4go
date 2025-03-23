@@ -25,13 +25,13 @@ type ButtonClickedCallback func()
 
 var (
 	buttonCallbacks     = make(map[uintptr]ButtonClickedCallback)
-	buttonCallbackMutex sync.Mutex
+	buttonCallbackMutex sync.RWMutex
 )
 
 //export buttonClickedCallback
 func buttonClickedCallback(button *C.GtkButton, userData C.gpointer) {
-	buttonCallbackMutex.Lock()
-	defer buttonCallbackMutex.Unlock()
+	buttonCallbackMutex.RLock()
+	defer buttonCallbackMutex.RUnlock()
 
 	// Convert button pointer to uintptr for lookup
 	buttonPtr := uintptr(unsafe.Pointer(button))
@@ -106,6 +106,16 @@ func (b *Button) ConnectClicked(callback ButtonClickedCallback) {
 
 	// Connect signal
 	C.connectButtonClicked(b.widget, C.gpointer(unsafe.Pointer(b.widget)))
+}
+
+// DisconnectClicked disconnects the clicked signal handler
+func (b *Button) DisconnectClicked() {
+	buttonCallbackMutex.Lock()
+	defer buttonCallbackMutex.Unlock()
+
+	// Remove callback from map
+	buttonPtr := uintptr(unsafe.Pointer(b.widget))
+	delete(buttonCallbacks, buttonPtr)
 }
 
 // Destroy destroys the button and cleans up resources

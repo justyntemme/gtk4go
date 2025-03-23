@@ -3,9 +3,11 @@ package main
 import (
 	"../../gtk4go"
 	"../gtk4"
+	"context"
 	"fmt"
 	"log"
 	"os"
+	"time"
 )
 
 func main() {
@@ -19,7 +21,7 @@ func main() {
 
 	// Create a window
 	win := gtk4.NewWindow("Hello GTK4 from Go!")
-	win.SetDefaultSize(400, 300)
+	win.SetDefaultSize(400, 400)
 
 	// Create a vertical box container with 10px spacing
 	box := gtk4.NewBox(gtk4.OrientationVertical, 10)
@@ -34,15 +36,22 @@ func main() {
 	// Create a second label for displaying the entered text
 	resultLbl := gtk4.NewLabel("Hello, World!")
 
+	// Create a progress label for background tasks
+	progressLbl := gtk4.NewLabel("Ready")
+
 	// Create buttons with labels
 	helloBtn := gtk4.NewButton("Say Hello")
 	aboutBtn := gtk4.NewButton("About")
 	fileBtn := gtk4.NewButton("Open File")
 
+	// Add new button for long task
+	longTaskBtn := gtk4.NewButton("Run Long Task")
+
 	// Add CSS classes to the buttons
 	helloBtn.AddCssClass("square-button")
 	aboutBtn.AddCssClass("square-button")
 	fileBtn.AddCssClass("square-button")
+	longTaskBtn.AddCssClass("square-button")
 
 	// Load CSS for styling
 	cssProvider, err := gtk4.LoadCSS(`
@@ -55,6 +64,9 @@ func main() {
 		}
 		.square-button:hover {
 			background-color: #1c71d8;
+		}
+		.square-button.disabled {
+			opacity: 0.6;
 		}
 		window {
 			background-color: #f6f5f4;
@@ -92,6 +104,10 @@ func main() {
 		.title {
 			font-size: 18px;
 			font-weight: bold;
+		}
+		.progress-label {
+			font-style: italic;
+			color: #666666;
 		}
 	`)
 	if err != nil {
@@ -221,6 +237,80 @@ func main() {
 		confirmDialog.Show()
 	})
 
+	// Connect long task button click event
+	var cancelFunc context.CancelFunc
+
+	longTaskBtn.ConnectClicked(func() {
+		// Check if a task is already running
+		if cancelFunc != nil {
+			// Cancel the current task
+			cancelFunc()
+			cancelFunc = nil
+			longTaskBtn.SetLabel("Run Long Task")
+			progressLbl.SetText("Task cancelled")
+			return
+		}
+
+		// Update UI to show task is starting
+		longTaskBtn.SetLabel("Cancel Task")
+		longTaskBtn.AddCssClass("disabled")
+		progressLbl.SetText("Starting task...")
+		progressLbl.AddCssClass("progress-label")
+
+		// Start a background task
+		cancelFunc = gtk4go.QueueBackgroundTask(
+			"long-task",
+			func(ctx context.Context, progress func(percent int, message string)) (interface{}, error) {
+				// This runs in a background goroutine
+
+				// Simulate a long task with 10 steps
+				for i := 0; i <= 100; i += 10 {
+					// Check for cancellation
+					select {
+					case <-ctx.Done():
+						return nil, ctx.Err()
+					default:
+						// Continue processing
+					}
+
+					// Update progress
+					progress(i, fmt.Sprintf("Processing step %d of 10", i/10))
+
+					// Simulate work
+					time.Sleep(500 * time.Millisecond)
+				}
+
+				// Return some result data
+				return "Task completed successfully!", nil
+			},
+			func(result interface{}, err error) {
+				// This runs on the UI thread when task is completed or fails
+
+				// Reset button
+				longTaskBtn.SetLabel("Run Long Task")
+				longTaskBtn.RemoveCssClass("disabled")
+
+				// Update result based on success or failure
+				if err != nil {
+					if err == context.Canceled {
+						progressLbl.SetText("Task was cancelled")
+					} else {
+						progressLbl.SetText(fmt.Sprintf("Error: %v", err))
+					}
+				} else {
+					progressLbl.SetText(result.(string))
+				}
+
+				// Clear the cancel function
+				cancelFunc = nil
+			},
+			func(percent int, message string) {
+				// This runs on the UI thread to show progress
+				progressLbl.SetText(fmt.Sprintf("%d%% - %s", percent, message))
+			},
+		)
+	})
+
 	// Create a horizontal button box for the buttons
 	buttonBox := gtk4.NewBox(gtk4.OrientationHorizontal, 5)
 	buttonBox.Append(helloBtn)
@@ -233,6 +323,11 @@ func main() {
 	box.Append(buttonBox)
 	box.Append(resultLbl)
 
+	// Add the long task section
+	box.Append(gtk4.NewLabel("Background Task Demo:"))
+	box.Append(longTaskBtn)
+	box.Append(progressLbl)
+
 	// Add some spacing to make the layout more attractive
 	box.SetSpacing(15)
 
@@ -244,4 +339,7 @@ func main() {
 
 	// Run the application
 	os.Exit(app.Run())
+
+	// Clean up background workers at exit
+	gtk4go.DefaultWorker.Stop()
 }
