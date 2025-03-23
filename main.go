@@ -42,12 +42,12 @@ func MainQuit() {
 }
 
 // Events returns the global GTK events channel.
-func Events() chan interface{} {
+func Events() chan any {
 	return events
 }
 
 var (
-	events = make(chan interface{}, 10)
+	events = make(chan any, 10)
 	mu     sync.Mutex
 )
 
