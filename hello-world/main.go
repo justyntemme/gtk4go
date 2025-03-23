@@ -34,11 +34,15 @@ func main() {
 	// Create a second label for displaying the entered text
 	resultLbl := gtk4.NewLabel("Hello, World!")
 
-	// Create a button with label
-	btn := gtk4.NewButton("Say Hello")
+	// Create buttons with labels
+	helloBtn := gtk4.NewButton("Say Hello")
+	aboutBtn := gtk4.NewButton("About")
+	fileBtn := gtk4.NewButton("Open File")
 
-	// Add a CSS class to the button for styling
-	btn.AddCssClass("square-button")
+	// Add CSS classes to the buttons
+	helloBtn.AddCssClass("square-button")
+	aboutBtn.AddCssClass("square-button")
+	fileBtn.AddCssClass("square-button")
 
 	// Load CSS for styling
 	cssProvider, err := gtk4.LoadCSS(`
@@ -62,6 +66,33 @@ func main() {
 		label {
 			margin: 4px 0;
 		}
+		.dialog-content-area {
+			padding: 16px;
+		}
+		.dialog-button-area {
+			padding: 8px;
+			background-color: #f0f0f0;
+		}
+		.dialog-message {
+			font-size: 14px;
+			padding: 8px;
+		}
+		.info-dialog .dialog-message {
+			color: #0066cc;
+		}
+		.warning-dialog .dialog-message {
+			color: #ff6600;
+		}
+		.error-dialog .dialog-message {
+			color: #cc0000;
+		}
+		.question-dialog .dialog-message {
+			color: #006633;
+		}
+		.title {
+			font-size: 18px;
+			font-weight: bold;
+		}
 	`)
 	if err != nil {
 		log.Printf("Failed to load CSS: %v", err)
@@ -79,25 +110,178 @@ func main() {
 		resultLbl.SetText(fmt.Sprintf("Hello, %s!", name))
 	})
 
-	// Connect button click event
-	btn.ConnectClicked(func() {
+	// Connect hello button click event
+	helloBtn.ConnectClicked(func() {
 		name := entry.GetText()
 		if name == "" {
 			name = "World"
 		}
+
+		// Create a simple info dialog
+		dialog := gtk4.NewMessageDialog(
+			win,
+			gtk4.DialogModal,
+			gtk4.MessageInfo,
+			gtk4.ResponseOk,
+			fmt.Sprintf("Hello, %s! Nice to meet you.", name),
+		)
+		dialog.SetTitle("Greeting")
+
+		// Connect response handler before showing the dialog
+		responseChan := make(chan bool)
+
+		dialog.ConnectResponse(func(responseId gtk4.ResponseType) {
+			fmt.Printf("Dialog response: %d\n", responseId)
+			dialog.Destroy()
+			responseChan <- true
+		})
+
+		// Show the dialog
+		dialog.Show()
+
+		// Wait for response in a goroutine to not block the UI
+		go func() {
+			<-responseChan
+			fmt.Println("Dialog closed")
+		}()
+
 		resultLbl.SetText(fmt.Sprintf("Hello, %s!", name))
-		fmt.Println("Said hello to:", name)
 	})
 
-	// Connect entry changed event
-	entry.ConnectChanged(func() {
-		fmt.Println("Text changed to:", entry.GetText())
+	// Connect about button click event
+	aboutBtn.ConnectClicked(func() {
+		// Create a custom about dialog
+		dialog := gtk4.NewDialog("About This Application", win, gtk4.DialogModal|gtk4.DialogDestroyWithParent)
+
+		// Get the content area of the dialog
+		content := dialog.GetContentArea()
+
+		// Add some content to the dialog
+		titleLabel := gtk4.NewLabel("GTK4Go Demo Application")
+		titleLabel.AddCssClass("title")
+		descLabel := gtk4.NewLabel("This is a simple demonstration of GTK4 bindings for Go.")
+		versionLabel := gtk4.NewLabel("Version: 1.0.0")
+
+		// Add widgets to the content area
+		content.Append(titleLabel)
+		content.Append(descLabel)
+		content.Append(versionLabel)
+
+		// Add padding to the content area
+		content.SetSpacing(10)
+
+		// Add OK button to the dialog
+		dialog.AddButton("OK", gtk4.ResponseOk)
+
+		// Connect response handler before showing the dialog
+		responseChan := make(chan bool)
+
+		dialog.ConnectResponse(func(responseId gtk4.ResponseType) {
+			fmt.Printf("About dialog response: %d\n", responseId)
+			dialog.Destroy()
+			responseChan <- true
+		})
+
+		// Show the dialog
+		dialog.Show()
+
+		// Wait for response in a goroutine to not block the UI
+		go func() {
+			<-responseChan
+			fmt.Println("About dialog closed")
+		}()
 	})
 
-	// Add widgets to the box with proper spacing
+	// Connect file button click event
+	fileBtn.ConnectClicked(func() {
+		// Show a confirmation dialog
+		confirmDialog := gtk4.NewMessageDialog(
+			win,
+			gtk4.DialogModal,
+			gtk4.MessageQuestion,
+			gtk4.ResponseYes|gtk4.ResponseNo,
+			"Do you want to open a file?",
+		)
+		confirmDialog.SetTitle("Confirm Action")
+
+		// Connect response handler for the confirmation dialog
+		confirmChan := make(chan bool)
+		var confirmed bool
+
+		confirmDialog.ConnectResponse(func(responseId gtk4.ResponseType) {
+			fmt.Printf("Confirm dialog response: %d\n", responseId)
+			confirmed = (responseId == gtk4.ResponseYes)
+			confirmDialog.Destroy()
+			confirmChan <- true
+		})
+
+		// Show the confirmation dialog
+		confirmDialog.Show()
+
+		// Wait for confirmation response and then potentially show file dialog
+		go func() {
+			<-confirmChan
+			fmt.Println("Confirm dialog closed, confirmed:", confirmed)
+
+			if confirmed {
+				// Create file open dialog
+				fileDialog := gtk4.NewFileDialog("Select a File", win, gtk4.FileDialogOpen)
+
+				// Connect response handler for the file dialog
+				fileChan := make(chan bool)
+				var selectedFilename string
+
+				fileDialog.ConnectResponse(func(responseId gtk4.ResponseType) {
+					fmt.Printf("File dialog response: %d\n", responseId)
+					if responseId == gtk4.ResponseAccept {
+						selectedFilename = fileDialog.GetFilename()
+						if selectedFilename != "" {
+							// This updates the UI with the selected filename
+							resultLbl.SetText(fmt.Sprintf("Selected file: %s", selectedFilename))
+
+							// Print to the console/terminal
+							fmt.Printf("User selected file: %s\n", selectedFilename)
+
+							// Here you could also process the file if needed
+							// For example, read its contents:
+							// fileContent, err := os.ReadFile(selectedFilename)
+							// if err == nil {
+							//     fmt.Printf("File content: %s\n", string(fileContent))
+							// }
+						}
+					}
+					fileDialog.Destroy()
+					fileChan <- true
+				})
+
+				// Show the file dialog
+				fileDialog.Show()
+
+				// Wait for file dialog response
+				go func() {
+					<-fileChan
+					fmt.Println("File dialog closed")
+					if selectedFilename != "" {
+						fmt.Printf("Selected file path: %s\n", selectedFilename)
+
+						// You could trigger additional processing here
+						// processFile(selectedFilename)
+					}
+				}()
+			}
+		}()
+	})
+
+	// Create a horizontal button box for the buttons
+	buttonBox := gtk4.NewBox(gtk4.OrientationHorizontal, 5)
+	buttonBox.Append(helloBtn)
+	buttonBox.Append(aboutBtn)
+	buttonBox.Append(fileBtn)
+
+	// Add widgets to the main box with proper spacing
 	box.Append(lbl)
 	box.Append(entry)
-	box.Append(btn)
+	box.Append(buttonBox)
 	box.Append(resultLbl)
 
 	// Add some spacing to make the layout more attractive
