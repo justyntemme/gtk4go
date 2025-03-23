@@ -37,6 +37,39 @@ func main() {
 	// Create a button with label
 	btn := gtk4.NewButton("Say Hello")
 
+	// Add a CSS class to the button for styling
+	btn.AddCssClass("square-button")
+
+	// Load CSS for styling
+	cssProvider, err := gtk4.LoadCSS(`
+		.square-button {
+			border-radius: 0;
+			padding: 8px 16px;
+			background-color: #3584e4;
+			color: white;
+			font-weight: bold;
+		}
+		.square-button:hover {
+			background-color: #1c71d8;
+		}
+		window {
+			background-color: #f6f5f4;
+		}
+		entry {
+			padding: 8px;
+			margin: 4px 0;
+		}
+		label {
+			margin: 4px 0;
+		}
+	`)
+	if err != nil {
+		log.Printf("Failed to load CSS: %v", err)
+	} else {
+		// Apply CSS provider to the entire application
+		gtk4.AddProviderForDisplay(cssProvider, uint(gtk4.PriorityApplication))
+	}
+
 	// Connect entry activate event (when Enter is pressed)
 	entry.ConnectActivate(func() {
 		name := entry.GetText()
