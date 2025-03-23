@@ -57,7 +57,7 @@ func NewApplication(id string) *Application {
 }
 
 // AddWindow adds a window to the application and connects the activate signal
-func (a *Application) AddWindow(window interface{}) {
+func (a *Application) AddWindow(window any) {
 	if w, ok := window.(interface{ GetWidget() *C.GtkWidget }); ok {
 		// Connect the activate signal to handle window display
 		C.connect_activate(a.app, w.GetWidget())
