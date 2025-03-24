@@ -21,15 +21,21 @@ GTK4Go is designed as a thin wrapper around the GTK4 C API using cgo. The librar
 3. **Event Handling**
    - Signal connections are implemented using callback functions.
    - Callback management is done through handler maps with mutex protection.
-   - The event loop is managed by GTK's application system rather than the deprecated `gtk_main()`.
+   - The event loop is managed by GTK's application system.
 
-4. **Component Hierarchy**
-   ```
-   GtkApplication
-   └── GtkWindow
-       └── Container Widgets (e.g., GtkBox)
-           └── Child Widgets (e.g., GtkButton, GtkLabel)
-   ```
+4. **Background Processing**
+   - The `BackgroundWorker` provides asynchronous operation capabilities.
+   - Tasks can be queued for background processing with progress updates.
+   - Results are safely delivered back to the UI thread.
+
+### Component Hierarchy
+
+```
+GtkApplication
+└── GtkWindow
+    └── Container Widgets (e.g., GtkBox, GtkGrid, GtkPaned)
+        └── Child Widgets (e.g., GtkButton, GtkLabel, GtkEntry)
+```
 
 ### Current Implementation
 
@@ -40,13 +46,16 @@ The library currently implements the following components:
 - **Box**: Container for horizontal and vertical layouts
 - **Button**: Clickable button with event handling
 - **Label**: Text display widget
-
-### Design Principles
-
-1. **Idiomatic Go**: The API is designed to feel natural to Go developers while maintaining access to GTK's power.
-2. **Safety**: Memory management and resource cleanup are automated where possible.
-3. **Performance**: The binding is designed to be lightweight with minimal overhead.
-4. **Simplicity**: The API aims to simplify GTK development without hiding its capabilities.
+- **Entry**: Text input widget
+- **Grid**: Grid layout container
+- **Paned**: Split view container
+- **Stack**: Stack container for showing one widget at a time
+- **StackSwitcher**: UI control for switching stack pages
+- **ScrolledWindow**: Container for scrollable content
+- **Viewport**: Container for viewing a portion of a larger area
+- **Dialog**: Base dialog and common dialog types
+- **Adjustment**: Value adjustment for ranged widgets
+- **CSS**: Styling support for widgets
 
 ## Usage Example
 
@@ -105,163 +114,9 @@ func main() {
 
 ## Implementation Plan
 
-### Step 1: Entry Widget Implementation
+### Next Steps
 
-The Entry widget should be implemented next because:
-- It provides essential text input capabilities required by most GUI applications
-- It's relatively simple to implement but adds significant functionality
-- It complements the existing components (Window, Box, Button, Label)
-
-**Implementation Details:**
-1. Create `gtk4/entry.go` file with the following structure:
-   - C bindings for GtkEntry functions
-   - Entry struct with widget pointer
-   - Constructor functions (NewEntry, NewEntryWithBuffer)
-   - Text manipulation methods (SetText, GetText, etc.)
-   - Signal handling for "changed" and "activate" events
-   - Property methods (SetPlaceholder, SetEditable, etc.)
-
-**Implementation Considerations:**
-- Implement proper memory management for text buffers
-- Ensure signal callbacks are properly handled
-- Consider implementing EntryBuffer as a separate type
-
-**Example API:**
-```go
-// NewEntry creates a new text entry widget
-func NewEntry() *Entry
-
-// SetText sets the entry text
-func (e *Entry) SetText(text string)
-
-// GetText gets the entry text
-func (e *Entry) GetText() string
-
-// ConnectChanged connects a callback to text-changed event
-func (e *Entry) ConnectChanged(callback func())
-
-// SetPlaceholderText sets placeholder text
-func (e *Entry) SetPlaceholderText(text string)
-```
-
-### Step 2: StyleContext and CSS Support
-
-CSS styling should be implemented next because:
-- It provides a way to customize the appearance of all widgets
-- It's a core feature of modern GTK4 applications
-- It will be required by more complex widgets later
-
-**Implementation Details:**
-1. Create `gtk4/css.go` file with:
-   - CSS Provider implementation
-   - StyleContext methods
-   - Functions to load and apply CSS
-   - Widget style property methods
-
-2. Add style-related methods to existing widgets
-
-**Implementation Considerations:**
-- Ensure CSS files can be loaded from strings and files
-- Implement proper error handling for CSS parsing
-- Consider the scoping of CSS (application-wide vs. widget-specific)
-
-**Example API:**
-```go
-// LoadCSSFromFile loads CSS from a file
-func LoadCSSFromFile(path string) (*CSSProvider, error)
-
-// LoadCSSFromString loads CSS from a string
-func LoadCSSFromString(css string) (*CSSProvider, error)
-
-// AddStyleClass adds a CSS class to a widget
-func (w *Widget) AddStyleClass(className string)
-
-// RemoveStyleClass removes a CSS class from a widget
-func (w *Widget) RemoveStyleClass(className string)
-```
-
-### Step 3: Dialog Implementation
-
-Dialogs should be implemented next because:
-- They provide critical functionality for user interaction
-- They're required for many common operations (file selection, alerts, etc.)
-- They build upon the basic window system already implemented
-
-**Implementation Details:**
-1. Create `gtk4/dialog.go` with:
-   - Base Dialog implementation
-   - Common dialog types (MessageDialog, FileChooserDialog)
-   - Response handling system
-
-2. Implement specific dialog variants:
-   - AlertDialog for simple notifications
-   - ConfirmDialog for yes/no questions
-   - FileChooserDialog for file operations
-
-**Implementation Considerations:**
-- Handle modal and non-modal behavior
-- Implement proper signal handling for responses
-- Consider higher-level convenience functions
-
-**Example API:**
-```go
-// NewDialog creates a new dialog
-func NewDialog(title string, parent *Window, flags DialogFlags) *Dialog
-
-// AddButton adds a button to the dialog
-func (d *Dialog) AddButton(text string, responseId ResponseType)
-
-// Run runs the dialog modally
-func (d *Dialog) Run() ResponseType
-
-// ShowMessageDialog shows a simple message dialog
-func ShowMessageDialog(parent *Window, messageType MessageType, 
-                      title, message string) ResponseType
-
-// ShowFileChooserDialog shows a file chooser dialog
-func ShowFileChooserDialog(parent *Window, title string, 
-                         action FileChooserAction) (string, bool)
-```
-
-### Step 4: Grid and Layout Containers
-
-Grid and advanced layout containers should be implemented next because:
-- They provide essential layout capabilities beyond simple boxes
-- They're required for more complex UI designs
-- They build upon the container system already in place
-
-**Implementation Details:**
-1. Create `gtk4/grid.go` with:
-   - Grid container implementation
-   - Cell placement and spanning methods
-   - Row/column properties and alignment
-
-2. Implement additional containers:
-   - Paned (split view) container
-   - Stack container (for tab-like interfaces)
-   - Viewport for scrollable content
-
-**Implementation Considerations:**
-- Implement proper child positioning and sizing
-- Consider alignment and expansion properties
-- Add comprehensive layout methods
-
-**Example API:**
-```go
-// NewGrid creates a new grid container
-func NewGrid() *Grid
-
-// Attach attaches a widget to a grid cell
-func (g *Grid) Attach(child Widget, left, top, width, height int)
-
-// SetRowSpacing sets spacing between rows
-func (g *Grid) SetRowSpacing(spacing int)
-
-// SetColumnHomogeneous sets whether columns are homogeneous
-func (g *Grid) SetColumnHomogeneous(homogeneous bool)
-```
-
-### Step 5: ListView and TreeView Implementation
+#### 1. ListView and TreeView Implementation
 
 ListView and TreeView should be implemented next because:
 - They're essential for displaying collections of data
@@ -298,7 +153,7 @@ func (t *TreeView) AddColumn(title string, renderer CellRenderer, column int)
 func (t *TreeView) GetSelection() *TreeSelection
 ```
 
-### Step 6: Menu and Action System
+#### 2. Menu and Action System
 
 Menu and action system should be implemented next because:
 - They provide standardized command handling for applications
@@ -335,7 +190,7 @@ func NewMenuModel(description string) (*MenuModel, error)
 func (a *Application) SetMenuModel(model *MenuModel)
 ```
 
-### Step 7: GtkBuilder and UI File Support
+#### 3. GtkBuilder and UI File Support
 
 GtkBuilder should be implemented next because:
 - It allows for UI definitions to be loaded from XML files
@@ -371,7 +226,7 @@ func (b *Builder) GetObject(id string) (interface{}, error)
 func (b *Builder) ConnectSignals(handlers map[string]interface{}) error
 ```
 
-### Step 8: Advanced Features and Refinement
+#### 4. Advanced Features and Refinement
 
 After implementing the core components, focus on advanced features and refinements:
 
@@ -395,4 +250,10 @@ After implementing the core components, focus on advanced features and refinemen
    - Generate API documentation
    - Develop example applications
 
-This implementation plan provides a structured approach to completing the GTK4Go library. By following these steps in order, you'll build a comprehensive, usable library with a natural progression from basic to advanced features.
+## Development Status
+
+GTK4Go is currently in a Proof of Concept (PoC) phase. The core architecture and several important widgets have been implemented, but the library is not yet complete or production-ready. Contributions and feedback are welcome.
+
+## License
+
+[MIT License](LICENSE)
