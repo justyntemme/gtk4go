@@ -99,17 +99,23 @@ package gtk4
 //
 // // Append to a GListStore
 // static void list_store_append(GListStore* store, gpointer item) {
-//     g_list_store_append(store, item);
+//     if (store && item) {
+//         g_list_store_append(store, item);
+//     }
 // }
 //
 // // Remove from a GListStore
 // static void list_store_remove(GListStore* store, guint position) {
-//     g_list_store_remove(store, position);
+//     if (store) {
+//         g_list_store_remove(store, position);
+//     }
 // }
 //
 // // Insert into a GListStore
 // static void list_store_insert(GListStore* store, guint position, gpointer item) {
-//     g_list_store_insert(store, position, item);
+//     if (store && item) {
+//         g_list_store_insert(store, position, item);
+//     }
 // }
 //
 // // Create a GtkTreeListModel
@@ -143,6 +149,36 @@ package gtk4
 //
 // static void tree_list_row_set_expanded(GtkTreeListRow* row, gboolean expanded) {
 //     if (row) gtk_tree_list_row_set_expanded(row, expanded);
+// }
+//
+// // Create a GObject from a string - helper for ListView
+// static GObject* create_string_object(const char* text) {
+//     if (text == NULL) return NULL;
+//     
+//     // Create a label widget (which is a GObject) to hold the string
+//     GtkWidget* label = gtk_label_new(text);
+//     if (label == NULL) return NULL;
+//     
+//     // Store the original string as a property
+//     g_object_set_data_full(G_OBJECT(label), "text", g_strdup(text), g_free);
+//     
+//     return G_OBJECT(label);
+// }
+//
+// // Extract string from a GObject - helper for ListView
+// static const char* get_string_from_object(GObject* obj) {
+//     if (obj == NULL) return "";
+//     
+//     // Try to get the string data we stored
+//     const char* text = g_object_get_data(obj, "text");
+//     if (text != NULL) return text;
+//     
+//     // If that fails, try to get text from a label
+//     if (GTK_IS_LABEL(obj)) {
+//         return gtk_label_get_text(GTK_LABEL(obj));
+//     }
+//     
+//     return "";
 // }
 import "C"
 
@@ -227,16 +263,14 @@ func (m *GListModel) GetItem(position int) interface{} {
 	defer C.g_object_unref(item)
 
 	// Convert to appropriate Go type based on item type
-	// This depends on the specific use case and may need customization
-	return castGObjectToGoValue((*C.GObject)(item))
-}
+	// Try to get string from GObject
+	str := GetStringFromObject((*C.GObject)(item))
+	if str != "" {
+		return str
+	}
 
-// castGObjectToGoValue converts a GObject to a Go value
-// This is a placeholder and would need to be implemented based on your needs
-func castGObjectToGoValue(obj *C.GObject) interface{} {
-	// In a real implementation, you would check the object type
-	// and convert appropriately. For now, we just return the pointer.
-	return uintptr(unsafe.Pointer(obj))
+	// If not a string, return the pointer
+	return uintptr(unsafe.Pointer(item))
 }
 
 // ListStore is a wrapper around a GListStore
@@ -247,38 +281,127 @@ type ListStore struct {
 
 // NewListStore creates a new ListStore with the given item type
 func NewListStore(itemType GType) *ListStore {
+	fmt.Printf("NewListStore: Creating store with item type %v\n", itemType)
+
+	// Validate item type - this is critical to prevent segfaults
+	// GTK requires item_type to be G_TYPE_OBJECT or a subclass
+	if itemType != G_TYPE_OBJECT && itemType != G_TYPE_STRING {
+		fmt.Printf("NewListStore: WARNING - item type %v is not G_TYPE_OBJECT, forcing to G_TYPE_OBJECT\n", itemType)
+		itemType = G_TYPE_OBJECT
+	}
+
 	store := &ListStore{
 		store: C.create_list_store(C.GType(itemType)),
+	}
+
+	if store.store == nil {
+		fmt.Println("NewListStore: ERROR - Failed to create GListStore")
+		return nil
 	}
 
 	// Create model wrapper
 	store.model = NewGListModel((*C.GListModel)(unsafe.Pointer(store.store)))
 
 	runtime.SetFinalizer(store, (*ListStore).Free)
+	fmt.Println("NewListStore: ListStore created successfully")
 	return store
 }
 
 // Append adds an item to the end of the list
 func (s *ListStore) Append(item interface{}) {
+	fmt.Printf("ListStore.Append: Appending item %v\n", item)
+
+	if s.store == nil {
+		fmt.Println("ListStore.Append: WARNING - s.store is nil")
+		return
+	}
+
 	// Convert item to GObject based on its type
-	// This is a simplified version and would need to be expanded
-	itemPtr := convertGoValueToGObject(item)
+	var itemPtr unsafe.Pointer
+
+	switch v := item.(type) {
+	case string:
+		// Create a GObject from the string
+		obj := CreateStringObject(v)
+		if obj == nil {
+			fmt.Println("ListStore.Append: ERROR - Failed to create GObject from string")
+			return
+		}
+		itemPtr = unsafe.Pointer(obj)
+	case int, float64, float32, bool:
+		// For basic types, create a string representation and wrap as GObject
+		obj := CreateStringObject(fmt.Sprintf("%v", v))
+		if obj == nil {
+			fmt.Println("ListStore.Append: ERROR - Failed to create GObject from value")
+			return
+		}
+		itemPtr = unsafe.Pointer(obj)
+	case unsafe.Pointer:
+		// Use pointer directly
+		itemPtr = v
+	case uintptr:
+		// Convert uintptr to unsafe.Pointer
+		itemPtr = unsafe.Pointer(v)
+	default:
+		fmt.Printf("ListStore.Append: WARNING - Unsupported item type %T\n", item)
+		return
+	}
+
 	if itemPtr != nil {
 		C.list_store_append(s.store, C.gpointer(itemPtr))
+		fmt.Println("ListStore.Append: Item appended successfully")
 	}
 }
 
 // Insert inserts an item at the specified position
 func (s *ListStore) Insert(position int, item interface{}) {
-	itemPtr := convertGoValueToGObject(item)
+	fmt.Printf("ListStore.Insert: Inserting item %v at position %d\n", item, position)
+
+	if s.store == nil {
+		fmt.Println("ListStore.Insert: WARNING - s.store is nil")
+		return
+	}
+
+	// Convert item to GObject based on its type (similar to Append)
+	var itemPtr unsafe.Pointer
+
+	switch v := item.(type) {
+	case string:
+		// Create a GObject from the string
+		obj := CreateStringObject(v)
+		if obj == nil {
+			fmt.Println("ListStore.Insert: ERROR - Failed to create GObject from string")
+			return
+		}
+		itemPtr = unsafe.Pointer(obj)
+	case unsafe.Pointer:
+		// Use pointer directly
+		itemPtr = v
+	case uintptr:
+		// Convert uintptr to unsafe.Pointer
+		itemPtr = unsafe.Pointer(v)
+	default:
+		fmt.Printf("ListStore.Insert: WARNING - Unsupported item type %T\n", item)
+		return
+	}
+
 	if itemPtr != nil {
 		C.list_store_insert(s.store, C.guint(position), C.gpointer(itemPtr))
+		fmt.Printf("ListStore.Insert: Item inserted successfully at position %d\n", position)
 	}
 }
 
 // Remove removes the item at the specified position
 func (s *ListStore) Remove(position int) {
+	fmt.Printf("ListStore.Remove: Removing item at position %d\n", position)
+
+	if s.store == nil {
+		fmt.Println("ListStore.Remove: WARNING - s.store is nil")
+		return
+	}
+
 	C.list_store_remove(s.store, C.guint(position))
+	fmt.Printf("ListStore.Remove: Item removed from position %d\n", position)
 }
 
 // GetModel returns the underlying GListModel wrapper
@@ -288,6 +411,8 @@ func (s *ListStore) GetModel() *GListModel {
 
 // Free frees the ListStore
 func (s *ListStore) Free() {
+	fmt.Println("ListStore.Free: Cleaning up resources")
+
 	if s.store != nil {
 		C.g_object_unref(C.gpointer(unsafe.Pointer(s.store)))
 		s.store = nil
@@ -298,25 +423,87 @@ func (s *ListStore) Free() {
 
 // GetNItems returns the number of items in the model
 func (s *ListStore) GetNItems() int {
+	if s.model == nil {
+		return 0
+	}
 	return s.model.GetNItems()
 }
 
 // GetItem returns the item at the given position
 func (s *ListStore) GetItem(position int) interface{} {
-	return s.model.GetItem(position)
+	if s.model == nil {
+		return nil
+	}
+
+	item := s.model.GetItem(position)
+
+	// If item is a pointer, try to convert it to a string
+	if ptr, ok := item.(uintptr); ok {
+		gobj := (*C.GObject)(unsafe.Pointer(ptr))
+		str := GetStringFromObject(gobj)
+		if str != "" {
+			return str
+		}
+	}
+
+	return item
 }
 
 // GetItemType returns the type of items in the model
 func (s *ListStore) GetItemType() GType {
+	if s.model == nil {
+		return G_TYPE_NONE
+	}
 	return s.model.GetItemType()
 }
 
-// convertGoValueToGObject converts a Go value to a GObject
-// This is a placeholder and would need to be implemented based on your needs
-func convertGoValueToGObject(value interface{}) unsafe.Pointer {
-	// In a real implementation, you would create appropriate GObjects
-	// based on the Go type. For now, we just return nil.
-	return nil
+// AppendString adds a string to a ListStore
+func (s *ListStore) AppendString(text string) {
+	fmt.Printf("AppendString: Adding string %q to ListStore\n", text)
+
+	if s.store == nil {
+		fmt.Println("AppendString: WARNING - s.store is nil")
+		return
+	}
+
+	obj := CreateStringObject(text)
+	if obj == nil {
+		fmt.Println("AppendString: ERROR - Failed to create string object")
+		return
+	}
+
+	C.list_store_append(s.store, C.gpointer(unsafe.Pointer(obj)))
+	fmt.Println("AppendString: String added successfully")
+}
+
+// CreateStringObject creates a GObject from a string for use in ListStore
+func CreateStringObject(text string) *C.GObject {
+	fmt.Printf("CreateStringObject: Creating GObject for string %q\n", text)
+
+	cText := C.CString(text)
+	defer C.free(unsafe.Pointer(cText))
+
+	obj := C.create_string_object(cText)
+	if obj == nil {
+		fmt.Fprintf(os.Stderr, "WARNING: Failed to create GObject for string\n")
+		return nil
+	}
+
+	return obj
+}
+
+// GetStringFromObject extracts string from a GObject
+func GetStringFromObject(obj *C.GObject) string {
+	if obj == nil {
+		return ""
+	}
+
+	cStr := C.get_string_from_object(obj)
+	if cStr == nil {
+		return ""
+	}
+
+	return C.GoString(cStr)
 }
 
 // TreeListModel is a wrapper around a GTK TreeListModel
@@ -327,16 +514,6 @@ type TreeListModel struct {
 
 // TreeListCreateModelFunc is the type for a function that creates child models for tree items
 type TreeListCreateModelFunc func(item interface{}) ListModel
-
-// treeListCreateModelCallback is the C callback for creating child models
-//
-//export treeListCreateModelCallback
-func treeListCreateModelCallback(item *C.gpointer, userData C.gpointer) *C.GListModel {
-	// Extract Go function pointer from user data
-	// This is complex and would need careful implementation
-	// For now, return nil
-	return nil
-}
 
 // NewTreeListModel creates a new TreeListModel
 func NewTreeListModel(root ListModel, passthrough bool, autoexpand bool, createFunc TreeListCreateModelFunc) *TreeListModel {
@@ -451,8 +628,14 @@ func (r *TreeListRow) GetItem() interface{} {
 	// We need to unref the item when we're done with it
 	defer C.g_object_unref(item)
 
-	// Convert to appropriate Go type
-	return castGObjectToGoValue((*C.GObject)(item))
+	// Try to get string from GObject
+	str := GetStringFromObject((*C.GObject)(item))
+	if str != "" {
+		return str
+	}
+
+	// If not a string, return the pointer
+	return uintptr(unsafe.Pointer(item))
 }
 
 // IsExpandable returns whether the row is expandable
@@ -709,240 +892,3 @@ func NewGenericModelData(value interface{}) *GenericModelData {
 		Reference: false,
 	}
 }
-
-// These functions should be added to the model.go file
-// or extracted to a separate module if appropriate
-
-// ListStore is a wrapper around a GListStore
-type ListStore struct {
-	store *C.GListStore
-	model *GListModel // Wrapper for model interface
-}
-
-// NewListStore creates a new ListStore with the given item type
-func NewListStore(itemType GType) *ListStore {
-	fmt.Printf("NewListStore: Creating store with item type %v\n", itemType)
-
-	// Validate item type - this is critical to prevent segfaults
-	// GTK requires item_type to be G_TYPE_OBJECT or a subclass
-	if itemType != G_TYPE_OBJECT && itemType != G_TYPE_STRING {
-		fmt.Printf("NewListStore: WARNING - item type %v is not G_TYPE_OBJECT, forcing to G_TYPE_OBJECT\n", itemType)
-		itemType = G_TYPE_OBJECT
-	}
-
-	store := &ListStore{
-		store: C.create_list_store(C.GType(itemType)),
-	}
-
-	if store.store == nil {
-		fmt.Println("NewListStore: ERROR - Failed to create GListStore")
-		return nil
-	}
-
-	// Create model wrapper
-	store.model = NewGListModel((*C.GListModel)(unsafe.Pointer(store.store)))
-
-	runtime.SetFinalizer(store, (*ListStore).Free)
-	fmt.Println("NewListStore: ListStore created successfully")
-	return store
-}
-
-// Append adds an item to the end of the list
-func (s *ListStore) Append(item interface{}) {
-	fmt.Printf("ListStore.Append: Appending item %v\n", item)
-
-	if s.store == nil {
-		fmt.Println("ListStore.Append: WARNING - s.store is nil")
-		return
-	}
-
-	// Convert item to GObject based on its type
-	var itemPtr unsafe.Pointer
-
-	switch v := item.(type) {
-	case string:
-		// Create a GObject from the string
-		obj := CreateStringObject(v)
-		if obj == nil {
-			fmt.Println("ListStore.Append: ERROR - Failed to create GObject from string")
-			return
-		}
-		itemPtr = unsafe.Pointer(obj)
-	case int, float64, float32, bool:
-		// For basic types, create a string representation and wrap as GObject
-		obj := CreateStringObject(fmt.Sprintf("%v", v))
-		if obj == nil {
-			fmt.Println("ListStore.Append: ERROR - Failed to create GObject from value")
-			return
-		}
-		itemPtr = unsafe.Pointer(obj)
-	case unsafe.Pointer:
-		// Use pointer directly
-		itemPtr = v
-	case uintptr:
-		// Convert uintptr to unsafe.Pointer
-		itemPtr = unsafe.Pointer(v)
-	default:
-		fmt.Printf("ListStore.Append: WARNING - Unsupported item type %T\n", item)
-		return
-	}
-
-	if itemPtr != nil {
-		C.list_store_append(s.store, C.gpointer(itemPtr))
-		fmt.Println("ListStore.Append: Item appended successfully")
-	}
-}
-
-// Insert inserts an item at the specified position
-func (s *ListStore) Insert(position int, item interface{}) {
-	fmt.Printf("ListStore.Insert: Inserting item %v at position %d\n", item, position)
-
-	if s.store == nil {
-		fmt.Println("ListStore.Insert: WARNING - s.store is nil")
-		return
-	}
-
-	// Convert item to GObject based on its type (similar to Append)
-	var itemPtr unsafe.Pointer
-
-	switch v := item.(type) {
-	case string:
-		// Create a GObject from the string
-		obj := CreateStringObject(v)
-		if obj == nil {
-			fmt.Println("ListStore.Insert: ERROR - Failed to create GObject from string")
-			return
-		}
-		itemPtr = unsafe.Pointer(obj)
-	case unsafe.Pointer:
-		// Use pointer directly
-		itemPtr = v
-	case uintptr:
-		// Convert uintptr to unsafe.Pointer
-		itemPtr = unsafe.Pointer(v)
-	default:
-		fmt.Printf("ListStore.Insert: WARNING - Unsupported item type %T\n", item)
-		return
-	}
-
-	if itemPtr != nil {
-		C.list_store_insert(s.store, C.guint(position), C.gpointer(itemPtr))
-		fmt.Printf("ListStore.Insert: Item inserted successfully at position %d\n", position)
-	}
-}
-
-// Remove removes the item at the specified position
-func (s *ListStore) Remove(position int) {
-	fmt.Printf("ListStore.Remove: Removing item at position %d\n", position)
-
-	if s.store == nil {
-		fmt.Println("ListStore.Remove: WARNING - s.store is nil")
-		return
-	}
-
-	C.list_store_remove(s.store, C.guint(position))
-	fmt.Printf("ListStore.Remove: Item removed from position %d\n", position)
-}
-
-// GetModel returns the underlying GListModel wrapper
-func (s *ListStore) GetModel() *GListModel {
-	return s.model
-}
-
-// Free frees the ListStore
-func (s *ListStore) Free() {
-	fmt.Println("ListStore.Free: Cleaning up resources")
-
-	if s.store != nil {
-		C.g_object_unref(C.gpointer(unsafe.Pointer(s.store)))
-		s.store = nil
-	}
-
-	s.model = nil
-}
-
-// GetNItems returns the number of items in the model
-func (s *ListStore) GetNItems() int {
-	if s.model == nil {
-		return 0
-	}
-	return s.model.GetNItems()
-}
-
-// GetItem returns the item at the given position
-func (s *ListStore) GetItem(position int) interface{} {
-	if s.model == nil {
-		return nil
-	}
-
-	item := s.model.GetItem(position)
-
-	// If item is a pointer, try to convert it to a string
-	if ptr, ok := item.(uintptr); ok {
-		gobj := (*C.GObject)(unsafe.Pointer(ptr))
-		str := GetStringFromObject(gobj)
-		if str != "" {
-			return str
-		}
-	}
-
-	return item
-}
-
-// GetItemType returns the type of items in the model
-func (s *ListStore) GetItemType() GType {
-	if s.model == nil {
-		return G_TYPE_NONE
-	}
-	return s.model.GetItemType()
-}
-
-// AppendString adds a string to a ListStore
-func (s *ListStore) AppendString(text string) {
-	fmt.Printf("AppendString: Adding string %q to ListStore\n", text)
-
-	if s.store == nil {
-		fmt.Println("AppendString: WARNING - s.store is nil")
-		return
-	}
-
-	obj := CreateStringObject(text)
-	if obj == nil {
-		fmt.Println("AppendString: ERROR - Failed to create string object")
-		return
-	}
-
-	C.list_store_append(s.store, C.gpointer(unsafe.Pointer(obj)))
-	fmt.Println("AppendString: String added successfully")
-}
-
-// CreateStringObject creates a GObject from a string for use in ListStore
-func CreateStringObject(text string) *C.GObject {
-	fmt.Printf("CreateStringObject: Creating GObject for string %q\n", text)
-
-	cText := C.CString(text)
-	defer C.free(unsafe.Pointer(cText))
-
-	obj := C.create_string_object(cText)
-	if obj == nil {
-		fmt.Fprintf(os.Stderr, "WARNING: Failed to create GObject for string\n")
-		return nil
-	}
-
-	return obj
-}
-
-// GetStringFromObject extracts string from a GObject
-func GetStringFromObject(obj *C.GObject) string {
-	if obj == nil {
-		return ""
-	}
-
-	cStr := C.get_string_from_object(obj)
-	if cStr == nil {
-		return ""
-	}
-
-	return C.GoString(cStr)
-}
-
