@@ -119,19 +119,20 @@ package gtk4
 //     gtk_column_view_column_set_sorter(column, sorter);
 // }
 //
-// static GtkSorter* create_custom_sorter(int column_id, int direction) {
+// // Create a custom sorter function that uses the column ID
+// static GtkSorter* create_custom_sorter(int direction) {
 //     // Create sort info
 //     SortInfo* sort_info = (SortInfo*)malloc(sizeof(SortInfo));
-//     sort_info->column_id = column_id;
 //     sort_info->direction = direction;
 //
 //     // Create custom sorter with our callback
-//GtkCustomSorter* sorter = gtk_custom_sorter_new((GCompareDataFunc)column_view_sort_func, sort_info, free);
+//     GtkCustomSorter* sorter = gtk_custom_sorter_new((GCompareDataFunc)column_view_sort_func, sort_info, free);
 //     return GTK_SORTER(sorter);
 // }
 import "C"
 
 import (
+	"runtime"
 	"sync"
 	"unsafe"
 )
@@ -162,12 +163,10 @@ func columnViewActivateCallback(view *C.GtkColumnView, position C.guint, userDat
 func column_view_sort_func(a, b, userData C.gpointer) C.int {
 	// Extract sort info
 	sortInfo := (*C.SortInfo)(userData)
-	columnID := int(sortInfo.column_id)
 	direction := int(sortInfo.direction)
 
 	// In a real implementation, we would extract values from a and b
-	// and compare them based on the column ID. This is a simplified version.
-	// We're just returning 0 for now.
+	// and compare them. This is a simplified version.
 	if direction == 0 {
 		// Ascending
 		return C.int(0)
@@ -516,7 +515,7 @@ func NewColumnViewColumn(title string, factory *ListItemFactory, options ...Colu
 		option(column)
 	}
 
-	SetupFinalization(column, (*ColumnViewColumn).Free)
+	runtime.SetFinalizer(column, (*ColumnViewColumn).Free)
 	return column
 }
 
@@ -567,14 +566,14 @@ func WithVisible(visible bool) ColumnViewColumnOption {
 }
 
 // WithSorter sets a sorter for the column
-func WithSorter(columnID int, ascending bool) ColumnViewColumnOption {
+func WithSorter(ascending bool) ColumnViewColumnOption {
 	return func(col *ColumnViewColumn) {
 		direction := 0
 		if !ascending {
 			direction = 1
 		}
 
-		sorter := C.create_custom_sorter(C.int(columnID), C.int(direction))
+		sorter := C.create_custom_sorter(C.int(direction))
 		C.column_view_column_set_sorter(col.column, sorter)
 	}
 }
@@ -640,13 +639,13 @@ func (col *ColumnViewColumn) SetVisible(visible bool) {
 }
 
 // SetSorter sets a sorter for the column
-func (col *ColumnViewColumn) SetSorter(columnID int, ascending bool) {
+func (col *ColumnViewColumn) SetSorter(ascending bool) {
 	direction := 0
 	if !ascending {
 		direction = 1
 	}
 
-	sorter := C.create_custom_sorter(C.int(columnID), C.int(direction))
+	sorter := C.create_custom_sorter(C.int(direction))
 	C.column_view_column_set_sorter(col.column, sorter)
 }
 
@@ -675,7 +674,7 @@ func TextColumn(title string, columnID int, options ...ColumnViewColumnOption) *
 	column := NewColumnViewColumn(title, factory, options...)
 
 	// Add a sorter
-	column.SetSorter(columnID, true)
+	column.SetSorter(true)
 
 	return column
 }
@@ -689,7 +688,7 @@ func CheckboxColumn(title string, columnID int, options ...ColumnViewColumnOptio
 	column := NewColumnViewColumn(title, factory, options...)
 
 	// Add a sorter
-	column.SetSorter(columnID, true)
+	column.SetSorter(true)
 
 	return column
 }
@@ -703,7 +702,7 @@ func ProgressColumn(title string, columnID int, options ...ColumnViewColumnOptio
 	column := NewColumnViewColumn(title, factory, options...)
 
 	// Add a sorter
-	column.SetSorter(columnID, true)
+	column.SetSorter(true)
 
 	return column
 }
@@ -714,7 +713,7 @@ func CustomColumn(title string, factory *ListItemFactory, columnID int, options 
 	column := NewColumnViewColumn(title, factory, options...)
 
 	// Add a sorter
-	column.SetSorter(columnID, true)
+	column.SetSorter(true)
 
 	return column
 }
