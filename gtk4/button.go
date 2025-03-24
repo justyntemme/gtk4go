@@ -16,28 +16,81 @@ package gtk4
 import "C"
 
 import (
-	"sync"
+	"sync/atomic"
 	"unsafe"
 )
 
 // ButtonClickedCallback represents a callback for button clicked events
 type ButtonClickedCallback func()
 
-var (
-	buttonCallbacks     = make(map[uintptr]ButtonClickedCallback)
-	buttonCallbackMutex sync.RWMutex
-)
+// Thread-safe callback registry using atomic.Value for lock-free reads
+type buttonCallbackRegistry struct {
+	// Use atomic.Value to store map - allows lock-free reads
+	callbacks atomic.Value
+}
+
+// newButtonCallbackRegistry creates a new registry
+func newButtonCallbackRegistry() *buttonCallbackRegistry {
+	r := &buttonCallbackRegistry{}
+	r.callbacks.Store(make(map[uintptr]ButtonClickedCallback))
+	return r
+}
+
+// set adds or updates a callback in the registry (thread-safe)
+func (r *buttonCallbackRegistry) set(key uintptr, callback ButtonClickedCallback) {
+	// Create a new map with the updated value - copy-on-write pattern
+	current := r.callbacks.Load().(map[uintptr]ButtonClickedCallback)
+	updated := make(map[uintptr]ButtonClickedCallback, len(current)+1)
+
+	// Copy existing entries
+	for k, v := range current {
+		updated[k] = v
+	}
+
+	// Add or update the entry
+	updated[key] = callback
+
+	// Atomically replace the map
+	r.callbacks.Store(updated)
+}
+
+// get retrieves a callback by key (lock-free, thread-safe read)
+func (r *buttonCallbackRegistry) get(key uintptr) (ButtonClickedCallback, bool) {
+	current := r.callbacks.Load().(map[uintptr]ButtonClickedCallback)
+	callback, ok := current[key]
+	return callback, ok
+}
+
+// delete removes a callback from the registry (thread-safe)
+func (r *buttonCallbackRegistry) delete(key uintptr) {
+	current := r.callbacks.Load().(map[uintptr]ButtonClickedCallback)
+
+	// Check if key exists
+	if _, exists := current[key]; !exists {
+		return
+	}
+
+	// Copy-on-write for deletion
+	updated := make(map[uintptr]ButtonClickedCallback, len(current)-1)
+	for k, v := range current {
+		if k != key {
+			updated[k] = v
+		}
+	}
+
+	r.callbacks.Store(updated)
+}
+
+// Global button callback registry
+var buttonRegistry = newButtonCallbackRegistry()
 
 //export buttonClickedCallback
 func buttonClickedCallback(button *C.GtkButton, userData C.gpointer) {
-	buttonCallbackMutex.RLock()
-	defer buttonCallbackMutex.RUnlock()
-
 	// Convert button pointer to uintptr for lookup
 	buttonPtr := uintptr(unsafe.Pointer(button))
 
-	// Find and call the callback
-	if callback, ok := buttonCallbacks[buttonPtr]; ok {
+	// Get callback without locking - atomic read
+	if callback, ok := buttonRegistry.get(buttonPtr); ok {
 		callback()
 	}
 }
@@ -97,12 +150,9 @@ func (b *Button) GetLabel() string {
 
 // ConnectClicked connects a callback function to the button's "clicked" signal
 func (b *Button) ConnectClicked(callback ButtonClickedCallback) {
-	buttonCallbackMutex.Lock()
-	defer buttonCallbackMutex.Unlock()
-
-	// Store callback in map
+	// Store callback in registry using atomic.Value (no locks needed for reads)
 	buttonPtr := uintptr(unsafe.Pointer(b.widget))
-	buttonCallbacks[buttonPtr] = callback
+	buttonRegistry.set(buttonPtr, callback)
 
 	// Connect signal
 	C.connectButtonClicked(b.widget, C.gpointer(unsafe.Pointer(b.widget)))
@@ -110,22 +160,16 @@ func (b *Button) ConnectClicked(callback ButtonClickedCallback) {
 
 // DisconnectClicked disconnects the clicked signal handler
 func (b *Button) DisconnectClicked() {
-	buttonCallbackMutex.Lock()
-	defer buttonCallbackMutex.Unlock()
-
-	// Remove callback from map
+	// Remove callback from registry
 	buttonPtr := uintptr(unsafe.Pointer(b.widget))
-	delete(buttonCallbacks, buttonPtr)
+	buttonRegistry.delete(buttonPtr)
 }
 
 // Destroy destroys the button and cleans up resources
 func (b *Button) Destroy() {
-	buttonCallbackMutex.Lock()
-	defer buttonCallbackMutex.Unlock()
-
-	// Remove callback from map if exists
+	// Remove callback from registry
 	buttonPtr := uintptr(unsafe.Pointer(b.widget))
-	delete(buttonCallbacks, buttonPtr)
+	buttonRegistry.delete(buttonPtr)
 
 	// Call base destroy method
 	b.BaseWidget.Destroy()
