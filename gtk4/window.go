@@ -7,7 +7,7 @@ package gtk4
 // #include <stdlib.h>
 //
 // // Helper function to enable frame clock synchronization
-// static void set_window_rendering_mode(GtkWindow* window) {
+// static void setWindowRenderingMode(GtkWindow* window) {
 //     // Enable hardware acceleration for the window
 //     GdkSurface* surface = gtk_native_get_surface(GTK_NATIVE(window));
 //     if (surface != NULL) {
@@ -25,7 +25,7 @@ package gtk4
 // }
 //
 // // Set content sizing mode for more efficient resizing
-// static void set_content_sizing(GtkWindow* window) {
+// static void setContentSizing(GtkWindow* window) {
 //     // Use natural sizing for better resize performance
 //     GtkWidget* child = gtk_window_get_child(window);
 //     if (child != NULL) {
@@ -97,7 +97,7 @@ func (w *Window) EnableAcceleratedRendering() {
 	}
 
 	// Use the C helper function to set up optimal rendering
-	C.set_window_rendering_mode((*C.GtkWindow)(unsafe.Pointer(w.widget)))
+	C.setWindowRenderingMode((*C.GtkWindow)(unsafe.Pointer(w.widget)))
 
 	// Ensure widget is realized first
 	C.gtk_widget_realize(w.widget)
@@ -115,7 +115,7 @@ func (w *Window) OptimizeForResizing() {
 	C.gtk_window_set_resizable((*C.GtkWindow)(unsafe.Pointer(w.widget)), C.TRUE)
 
 	// Configure child widget sizing for better performance
-	C.set_content_sizing((*C.GtkWindow)(unsafe.Pointer(w.widget)))
+	C.setContentSizing((*C.GtkWindow)(unsafe.Pointer(w.widget)))
 }
 
 // WithDefaultSize sets the default window size
@@ -179,7 +179,7 @@ func (w *Window) SetChild(child Widget) {
 	C.gtk_window_set_child((*C.GtkWindow)(unsafe.Pointer(w.widget)), child.GetWidget())
 
 	// Re-apply optimization for resizing when child changes
-	C.set_content_sizing((*C.GtkWindow)(unsafe.Pointer(w.widget)))
+	C.setContentSizing((*C.GtkWindow)(unsafe.Pointer(w.widget)))
 }
 
 // Show makes the window visible

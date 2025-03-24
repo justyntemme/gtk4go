@@ -19,9 +19,18 @@ func main() {
 	// Create a new application
 	app := gtk4.NewApplication("com.example.HelloWorld")
 
-	// Create a window
+	// Create a window with optimized rendering
 	win := gtk4.NewWindow("Hello GTK4 from Go!")
 	win.SetDefaultSize(800, 600)
+
+	// Enable hardware-accelerated rendering
+	win.EnableAcceleratedRendering()
+
+	// Set up CSS optimization during window resize
+	win.SetupCSSOptimizedResize()
+
+	// Optimize for resizing specifically
+	win.OptimizeForResizing()
 
 	// Create a vertical box container as the main layout
 	mainBox := gtk4.NewBox(gtk4.OrientationVertical, 10)
@@ -134,7 +143,7 @@ func main() {
 	logBox := gtk4.NewBox(gtk4.OrientationVertical, 5)
 
 	// Add some sample log entries
-	for i := 1; i <= 30; i++ {
+	for i := 1; i <= 10; i++ {
 		logEntry := gtk4.NewLabel(fmt.Sprintf("[%d] Log entry #%d", i, i))
 		logEntry.AddCssClass("log-entry")
 		logBox.Append(logEntry)
@@ -183,7 +192,7 @@ This demo showcases GTK4Go's layout containers and widgets.
 	fileBtn.AddCssClass("square-button")
 	longTaskBtn.AddCssClass("square-button")
 
-	// Load CSS for styling
+	// Load CSS for styling - using caching for better performance
 	cssProvider, err := gtk4.LoadCSS(`
 		.title {
 			font-size: 18px;
@@ -262,7 +271,7 @@ This demo showcases GTK4Go's layout containers and widgets.
 		log.Printf("Failed to load CSS: %v", err)
 	} else {
 		// Apply CSS provider to the entire application
-		gtk4.AddProviderForDisplay(cssProvider, uint(gtk4.PriorityApplication))
+		gtk4.AddProviderForDisplay(cssProvider, 600)
 	}
 
 	// Set up event handlers
@@ -523,6 +532,10 @@ This demo showcases GTK4Go's layout containers and widgets.
 
 	// Add the window to the application
 	app.AddWindow(win)
+
+	// Show instructions on how to test the window performance
+	log.Println("Running Hello World with optimized window performance.")
+	log.Println("Try resizing and moving the window to test the improvements.")
 
 	// Run the application
 	os.Exit(app.Run())
