@@ -45,128 +45,30 @@ func main() {
 		gtk4.WithPosition(350),
 		gtk4.WithWideHandle(true),
 	)
-	// This is the section of hello-world/main.go that needs to be replaced
-	// Find the ListView creation code (around line 210) and replace it with this
 
-	// LEFT SIDE: Simple ListView
-	listBox := gtk4.NewBox(gtk4.OrientationVertical, 5)
-	listLabel := gtk4.NewLabel("Simple List View:")
-	listLabel.AddCssClass("list-header")
-	listBox.Append(listLabel)
+	// LEFT SIDE: Controls box
+	leftBox := gtk4.NewBox(gtk4.OrientationVertical, 10)
 
-	// Create a scrolled window for the list view
-	listScrollWin := gtk4.NewScrolledWindow(
-		gtk4.WithHScrollbarPolicy(gtk4.ScrollbarPolicyAutomatic),
-		gtk4.WithVScrollbarPolicy(gtk4.ScrollbarPolicyAutomatic),
-	)
+	// Create UI controls for left side
+	entry := gtk4.NewEntry(gtk4.WithPlaceholderText("Enter your name"))
+	resultLbl := gtk4.NewLabel("Hello, World!")
+	helloBtn := gtk4.NewButton("Say Hello")
+	aboutBtn := gtk4.NewButton("About")
+	fileBtn := gtk4.NewButton("Open File")
+	longTaskBtn := gtk4.NewButton("Run Long Task")
+	progressLbl := gtk4.NewLabel("")
+	progressLbl.AddCssClass("progress-label")
 
-	// Create a list store model for the list view - IMPORTANT FIX: Use G_TYPE_OBJECT
-	fmt.Println("Creating ListStore with G_TYPE_OBJECT type")
-	listStore := gtk4.NewListStore(gtk4.G_TYPE_OBJECT)
-	if listStore == nil {
-		fmt.Println("ERROR: Failed to create ListStore")
-	} else {
-		// Add data to list store using the new helper
-		for i := 0; i < 10; i++ {
-			itemText := fmt.Sprintf("Item %d", i+1)
-			fmt.Printf("Adding string item: %s\n", itemText)
-			listStore.AppendString(itemText)
-		}
+	// Add controls to the left box
+	leftBox.Append(entry)
+	leftBox.Append(resultLbl)
+	leftBox.Append(helloBtn)
+	leftBox.Append(aboutBtn)
+	leftBox.Append(fileBtn)
+	leftBox.Append(longTaskBtn)
+	leftBox.Append(progressLbl)
 
-		// Create a list item factory
-		fmt.Println("Creating TextFactory for ListView")
-		itemFactory := gtk4.TextFactory()
-
-		// Debug
-		fmt.Printf("ListView creation - model: %v, factory: %v\n", listStore, itemFactory)
-		if itemFactory == nil {
-			fmt.Println("ERROR: itemFactory is nil!")
-		}
-
-		// Create the list view with single selection mode
-		fmt.Println("Creating ListView...")
-		listView := gtk4.NewListView(listStore,
-			gtk4.WithFactory(itemFactory),
-			gtk4.WithSelectionMode(gtk4.SelectionModeSingle),
-			gtk4.WithShowSeparators(true),
-			gtk4.WithSingleClickActivate(true),
-		)
-
-		if listView == nil {
-			fmt.Println("ERROR: Failed to create ListView!")
-		} else {
-			// Create a status label for selection feedback
-			listStatusLabel := gtk4.NewLabel("No selection")
-			listStatusLabel.AddCssClass("status-label")
-
-			// Connect selection changed handler
-			listView.ConnectSelectionChanged(func(position int, nItems int) {
-				// Get the selected item
-				item := listView.GetSelectedItem()
-				if item != nil {
-					statusText := fmt.Sprintf("Selected: %v", item)
-					listStatusLabel.SetText(statusText)
-
-					// Add to log
-					logEntry := gtk4.NewLabel(fmt.Sprintf("[%s] %s",
-						time.Now().Format("15:04:05"), statusText))
-					logEntry.AddCssClass("log-entry")
-					logBox.Prepend(logEntry)
-				} else {
-					listStatusLabel.SetText("No selection")
-				}
-			})
-
-			// Connect item activated handler
-			listView.ConnectItemActivated(func(position int) {
-				// Get the item at this position
-				item := listStore.GetItem(position)
-				statusText := fmt.Sprintf("Activated: %v", item)
-
-				// Add to log
-				logEntry := gtk4.NewLabel(fmt.Sprintf("[%s] %s",
-					time.Now().Format("15:04:05"), statusText))
-				logEntry.AddCssClass("log-entry")
-				logBox.Prepend(logEntry)
-			})
-
-			// Add list view to scrolled window
-			listScrollWin.SetChild(listView)
-
-			// Create button toolbar for list actions
-			listButtons := gtk4.NewBox(gtk4.OrientationHorizontal, 5)
-
-			addButton := gtk4.NewButton("Add Item")
-			addButton.ConnectClicked(func() {
-				// Add a new item to the model
-				count := listStore.GetNItems()
-				newItemText := fmt.Sprintf("New Item %d", count+1)
-				fmt.Printf("Adding new item: %s\n", newItemText)
-				listStore.AppendString(newItemText)
-
-				// Add log entry
-				logEntry := gtk4.NewLabel(fmt.Sprintf("[%s] Added new item: %s",
-					time.Now().Format("15:04:05"), newItemText))
-				logEntry.AddCssClass("log-entry")
-				logBox.Prepend(logEntry)
-			})
-
-			listButtons.Append(addButton)
-
-			// Add list view components to the list box
-			listBox.Append(listScrollWin)
-			listBox.Append(listStatusLabel)
-			listBox.Append(listButtons)
-		}
-	}
-
-	// Add list box to the appropriate container
-	listViewPaned.SetStartChild(listBox)
-
-	// The RIGHT SIDE: ColumnView code can remain as-is or be updated similarly if needed
-	// ---- RIGHT SIDE OF PANED ----
-
-	// Create a Stack for different content pages
+	// RIGHT SIDE: Create a Stack for different content pages
 	rightStack := gtk4.NewStack(
 		gtk4.WithTransitionType(gtk4.StackTransitionTypeSlideLeftRight),
 		gtk4.WithTransitionDuration(200),
@@ -275,11 +177,12 @@ This demo showcases GTK4Go's layout containers and widgets.
 	)
 
 	// Create a list store model for the list view
-	listStore := gtk4.NewListStore(gtk4.G_TYPE_STRING)
+	listStore := gtk4.NewListStore(gtk4.G_TYPE_OBJECT)
 
 	// Add data to list store
 	for i := 0; i < 10; i++ {
-		listStore.Append(fmt.Sprintf("Item %d", i+1))
+		itemText := fmt.Sprintf("Item %d", i+1)
+		listStore.AppendString(itemText)
 	}
 
 	// Create a list item factory
@@ -339,7 +242,7 @@ This demo showcases GTK4Go's layout containers and widgets.
 		// Add a new item to the model
 		count := listStore.GetNItems()
 		newItemText := fmt.Sprintf("New Item %d", count+1)
-		listStore.Append(newItemText)
+		listStore.AppendString(newItemText)
 
 		// Add log entry
 		logEntry := gtk4.NewLabel(fmt.Sprintf("[%s] Added new item: %s",
@@ -369,7 +272,6 @@ This demo showcases GTK4Go's layout containers and widgets.
 
 	// Create a list store for the column view data
 	// We'll use a simple list store for this example
-	// In a real application, you might use a more complex data model
 	type DataItem struct {
 		Name     string
 		Value    int
@@ -398,7 +300,7 @@ This demo showcases GTK4Go's layout containers and widgets.
 	// Note: In a real application, we'd need to convert these to GObjects
 	// For this example, we'll just pretend they're there
 	for _, item := range items {
-		dataStore.Append(item) // This is simplified - real implementation would wrap as GObject
+		dataStore.AppendString(item.Name) // Simplified - just adding the name
 	}
 
 	// Create the column view

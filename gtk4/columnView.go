@@ -227,6 +227,7 @@ func NewColumnView(model ListModel, options ...ColumnViewOption) *ColumnView {
 }
 
 // WithColumnSelectionMode sets the selection mode for the column view
+
 func WithColumnSelectionMode(mode SelectionMode) ColumnViewOption {
 	return func(cv *ColumnView) {
 		// Get the current GListModel from the selection model
@@ -247,23 +248,42 @@ func WithColumnSelectionMode(mode SelectionMode) ColumnViewOption {
 			return
 		}
 
-		// Clean up the old selection model
-		if cv.selectionModel != nil {
-			C.g_object_unref(C.gpointer(unsafe.Pointer(cv.selectionModel)))
-		}
+		// Create a new selection model before cleaning up the old one
+		var newSelectionModel *C.GtkSelectionModel
 
 		// Create a new selection model based on the mode
 		switch mode {
 		case SelectionModeSingle:
-			cv.selectionModel = C.create_single_selection(glistModel)
+			newSelectionModel = C.create_single_selection(glistModel)
 		case SelectionModeMultiple:
-			cv.selectionModel = C.create_multi_selection(glistModel)
+			newSelectionModel = C.create_multi_selection(glistModel)
 		case SelectionModeNone:
-			cv.selectionModel = C.create_no_selection(glistModel)
+			newSelectionModel = C.create_no_selection(glistModel)
+		default:
+			// Default to single selection if mode is invalid
+			newSelectionModel = C.create_single_selection(glistModel)
 		}
 
-		// Update the column view
-		C.column_view_set_model((*C.GtkColumnView)(unsafe.Pointer(cv.widget)), cv.selectionModel)
+		// Check if new model was created successfully
+		if newSelectionModel == nil {
+			return
+		}
+
+		// Clean up the old selection model AFTER creating the new one
+		if cv.selectionModel != nil {
+			C.g_object_unref(C.gpointer(unsafe.Pointer(cv.selectionModel)))
+		}
+
+		// Store the new selection model
+		cv.selectionModel = newSelectionModel
+
+		// Only set the model on the column view if we have a valid widget
+		if cv.widget != nil {
+			// This is the line that's crashing - ensure we have valid pointers
+			C.column_view_set_model(
+				(*C.GtkColumnView)(unsafe.Pointer(cv.widget)),
+				cv.selectionModel)
+		}
 	}
 }
 
@@ -717,4 +737,3 @@ func CustomColumn(title string, factory *ListItemFactory, columnID int, options 
 
 	return column
 }
-
