@@ -1,62 +1,148 @@
-// Package gtk4 provides tree model functionality for GTK4
-// File: gtk4go/gtk4/treeModel.go
+// Package gtk4 provides modern list model functionality for GTK4
+// File: gtk4go/gtk4/model.go
 package gtk4
 
 // #cgo pkg-config: gtk4
 // #include <gtk/gtk.h>
 // #include <stdlib.h>
 //
-// // Wrapper for G_VALUE_TYPE macro
-// static GType get_value_type(GValue *value) {
+// // Wrapper functions for GValue type checking
+// static gboolean value_holds_string(GValue* value) {
+//     return G_VALUE_HOLDS_STRING(value);
+// }
+//
+// static gboolean value_holds_int(GValue* value) {
+//     return G_VALUE_HOLDS_INT(value);
+// }
+//
+// static gboolean value_holds_boolean(GValue* value) {
+//     return G_VALUE_HOLDS_BOOLEAN(value);
+// }
+//
+// static gboolean value_holds_double(GValue* value) {
+//     return G_VALUE_HOLDS_DOUBLE(value);
+// }
+//
+// static gboolean value_holds_float(GValue* value) {
+//     return G_VALUE_HOLDS_FLOAT(value);
+// }
+//
+// static GType value_get_type(GValue* value) {
 //     return G_VALUE_TYPE(value);
 // }
 //
-// // Wrapper for g_value_get_string to handle NULL
-// static const char* safe_get_string(GValue *value) {
+// // Wrapper for value extraction helpers
+// static const char* value_get_string_safe(GValue* value) {
+//     if (!G_VALUE_HOLDS_STRING(value)) return NULL;
 //     const char* str = g_value_get_string(value);
 //     return str ? str : "";
 // }
 //
-// // Wrapper functions for TreeStore set value (to avoid variadic function issues)
-// static void tree_store_set_string(GtkTreeStore *store, GtkTreeIter *iter, gint column, const char *value) {
-//     gtk_tree_store_set(store, iter, column, value, -1);
+// static int value_get_int_safe(GValue* value) {
+//     if (!G_VALUE_HOLDS_INT(value)) return 0;
+//     return g_value_get_int(value);
 // }
 //
-// static void tree_store_set_int(GtkTreeStore *store, GtkTreeIter *iter, gint column, gint value) {
-//     gtk_tree_store_set(store, iter, column, value, -1);
+// static gboolean value_get_boolean_safe(GValue* value) {
+//     if (!G_VALUE_HOLDS_BOOLEAN(value)) return FALSE;
+//     return g_value_get_boolean(value);
 // }
 //
-// static void tree_store_set_boolean(GtkTreeStore *store, GtkTreeIter *iter, gint column, gboolean value) {
-//     gtk_tree_store_set(store, iter, column, value, -1);
+// static double value_get_double_safe(GValue* value) {
+//     if (!G_VALUE_HOLDS_DOUBLE(value)) return 0.0;
+//     return g_value_get_double(value);
 // }
 //
-// static void tree_store_set_float(GtkTreeStore *store, GtkTreeIter *iter, gint column, gfloat value) {
-//     gtk_tree_store_set(store, iter, column, value, -1);
+// static float value_get_float_safe(GValue* value) {
+//     if (!G_VALUE_HOLDS_FLOAT(value)) return 0.0f;
+//     return g_value_get_float(value);
 // }
 //
-// static void tree_store_set_double(GtkTreeStore *store, GtkTreeIter *iter, gint column, gdouble value) {
-//     gtk_tree_store_set(store, iter, column, value, -1);
+// // Wrapper functions for value setting
+// static void value_set_string(GValue* value, const char* str) {
+//     g_value_set_string(value, str);
 // }
 //
-// // Wrapper functions for ListStore set value (to avoid variadic function issues)
-// static void list_store_set_string(GtkListStore *store, GtkTreeIter *iter, gint column, const char *value) {
-//     gtk_list_store_set(store, iter, column, value, -1);
+// static void value_set_int(GValue* value, int i) {
+//     g_value_set_int(value, i);
 // }
 //
-// static void list_store_set_int(GtkListStore *store, GtkTreeIter *iter, gint column, gint value) {
-//     gtk_list_store_set(store, iter, column, value, -1);
+// static void value_set_boolean(GValue* value, gboolean b) {
+//     g_value_set_boolean(value, b);
 // }
 //
-// static void list_store_set_boolean(GtkListStore *store, GtkTreeIter *iter, gint column, gboolean value) {
-//     gtk_list_store_set(store, iter, column, value, -1);
+// static void value_set_double(GValue* value, double d) {
+//     g_value_set_double(value, d);
 // }
 //
-// static void list_store_set_float(GtkListStore *store, GtkTreeIter *iter, gint column, gfloat value) {
-//     gtk_list_store_set(store, iter, column, value, -1);
+// static void value_set_float(GValue* value, float f) {
+//     g_value_set_float(value, f);
 // }
 //
-// static void list_store_set_double(GtkListStore *store, GtkTreeIter *iter, gint column, gdouble value) {
-//     gtk_list_store_set(store, iter, column, value, -1);
+// // GListModel helpers
+// static guint g_list_model_get_n_items_safe(GListModel* model) {
+//     return model ? g_list_model_get_n_items(model) : 0;
+// }
+//
+// static GType g_list_model_get_item_type_safe(GListModel* model) {
+//     return model ? g_list_model_get_item_type(model) : G_TYPE_NONE;
+// }
+//
+// static gpointer g_list_model_get_item_safe(GListModel* model, guint position) {
+//     return model ? g_list_model_get_item(model, position) : NULL;
+// }
+//
+// // Create a GListStore
+// static GListStore* create_list_store(GType item_type) {
+//     return g_list_store_new(item_type);
+// }
+//
+// // Append to a GListStore
+// static void list_store_append(GListStore* store, gpointer item) {
+//     g_list_store_append(store, item);
+// }
+//
+// // Remove from a GListStore
+// static void list_store_remove(GListStore* store, guint position) {
+//     g_list_store_remove(store, position);
+// }
+//
+// // Insert into a GListStore
+// static void list_store_insert(GListStore* store, guint position, gpointer item) {
+//     g_list_store_insert(store, position, item);
+// }
+//
+// // Create a GtkTreeListModel
+// static GtkTreeListModel* create_tree_list_model(GListModel* root, gboolean passthrough,
+//                               gboolean autoexpand, GtkTreeListModelCreateModelFunc create_func, 
+//                               gpointer user_data, GDestroyNotify user_destroy) {
+//     return gtk_tree_list_model_new(root, passthrough, autoexpand, create_func, user_data, user_destroy);
+// }
+//
+// // GtkTreeListRow helpers
+// static GtkTreeListRow* get_tree_list_row(GtkTreeListModel* model, guint position) {
+//     GObject* obj = G_OBJECT(g_list_model_get_item(G_LIST_MODEL(model), position));
+//     return GTK_TREE_LIST_ROW(obj);
+// }
+//
+// static GListModel* tree_list_row_get_children(GtkTreeListRow* row) {
+//     return row ? gtk_tree_list_row_get_children(row) : NULL;
+// }
+//
+// static gpointer tree_list_row_get_item(GtkTreeListRow* row) {
+//     return row ? gtk_tree_list_row_get_item(row) : NULL;
+// }
+//
+// static gboolean tree_list_row_is_expandable(GtkTreeListRow* row) {
+//     return row ? gtk_tree_list_row_is_expandable(row) : FALSE;
+// }
+//
+// static gboolean tree_list_row_get_expanded(GtkTreeListRow* row) {
+//     return row ? gtk_tree_list_row_get_expanded(row) : FALSE;
+// }
+//
+// static void tree_list_row_set_expanded(GtkTreeListRow* row, gboolean expanded) {
+//     if (row) gtk_tree_list_row_set_expanded(row, expanded);
 // }
 import "C"
 
@@ -65,297 +151,137 @@ import (
 	"unsafe"
 )
 
-// TreeModelFlags defines flags for the TreeModel
-type TreeModelFlags int
-
-const (
-	// TreeModelListOnly the model is a simple list, not a tree
-	TreeModelListOnly TreeModelFlags = C.GTK_TREE_MODEL_LIST_ONLY
-	// TreeModelIters the model has persistent iterators
-	TreeModelIters TreeModelFlags = C.GTK_TREE_MODEL_ITERS_PERSIST
-)
-
 // GType is a numeric type identifier
 type GType C.GType
 
 // Define common GTypes
 const (
+	G_TYPE_NONE    GType = C.G_TYPE_NONE
 	G_TYPE_STRING  GType = C.G_TYPE_STRING
 	G_TYPE_INT     GType = C.G_TYPE_INT
 	G_TYPE_BOOLEAN GType = C.G_TYPE_BOOLEAN
 	G_TYPE_FLOAT   GType = C.G_TYPE_FLOAT
 	G_TYPE_DOUBLE  GType = C.G_TYPE_DOUBLE
+	G_TYPE_OBJECT  GType = C.G_TYPE_OBJECT
 )
 
-// TreeIter represents an iterator in a TreeModel
-type TreeIter struct {
-	iter C.GtkTreeIter
+// ListModel is an interface for list models
+type ListModel interface {
+	// GetNItems returns the number of items in the model
+	GetNItems() int
+	
+	// GetItem returns the item at the given position
+	GetItem(position int) interface{}
+	
+	// GetItemType returns the type of items in the model
+	GetItemType() GType
 }
 
-// NewTreeIter creates a new TreeIter
-func NewTreeIter() *TreeIter {
-	return &TreeIter{}
+// GListModel is a wrapper around a GListModel
+type GListModel struct {
+	model *C.GListModel
 }
 
-// TreePath represents a path to a node in a tree model
-type TreePath struct {
-	path *C.GtkTreePath
-}
-
-// NewTreePath creates a new TreePath
-func NewTreePath() *TreePath {
-	path := &TreePath{
-		path: C.gtk_tree_path_new(),
+// NewGListModel creates a wrapper around an existing GListModel
+func NewGListModel(model *C.GListModel) *GListModel {
+	if model == nil {
+		return nil
 	}
-	runtime.SetFinalizer(path, (*TreePath).Free)
-	return path
-}
-
-// NewTreePathFromString creates a new TreePath from a string
-func NewTreePathFromString(pathStr string) *TreePath {
-	cPath := C.CString(pathStr)
-	defer C.free(unsafe.Pointer(cPath))
-
-	path := &TreePath{
-		path: C.gtk_tree_path_new_from_string(cPath),
+	
+	result := &GListModel{
+		model: model,
 	}
-	runtime.SetFinalizer(path, (*TreePath).Free)
-	return path
+	
+	runtime.SetFinalizer(result, (*GListModel).free)
+	return result
 }
 
-// ToString converts a TreePath to a string
-func (p *TreePath) ToString() string {
-	cstr := C.gtk_tree_path_to_string(p.path)
-	defer C.g_free(C.gpointer(unsafe.Pointer(cstr)))
-	return C.GoString(cstr)
-}
-
-// Free frees the TreePath
-func (p *TreePath) Free() {
-	if p.path != nil {
-		C.gtk_tree_path_free(p.path)
-		p.path = nil
+// free frees the GListModel
+func (m *GListModel) free() {
+	if m.model != nil {
+		C.g_object_unref(C.gpointer(unsafe.Pointer(m.model)))
+		m.model = nil
 	}
 }
 
-// TreeModel represents a data model for TreeView
-type TreeModel interface {
-	// GetModelPointer returns the underlying GtkTreeModel pointer
-	GetModelPointer() *C.GtkTreeModel
-
-	// GetIter gets an iterator pointing to a path
-	GetIter(path *TreePath) (*TreeIter, bool)
-
-	// GetPath gets the path for an iterator
-	GetPath(iter *TreeIter) *TreePath
-
-	// GetValue gets the value of a cell
-	GetValue(iter *TreeIter, column int) (interface{}, error)
-
-	// GetNColumns gets the number of columns
-	GetNColumns() int
-
-	// GetColumnType gets the type of a column
-	GetColumnType(column int) GType
-
-	// IterNext moves the iterator to the next row
-	IterNext(iter *TreeIter) bool
+// GetNItems returns the number of items in the model
+func (m *GListModel) GetNItems() int {
+	return int(C.g_list_model_get_n_items_safe(m.model))
 }
 
-// TreeModelImplementor partially implements TreeModel
-type TreeModelImplementor struct {
-	model *C.GtkTreeModel
+// GetItemType returns the type of items in the model
+func (m *GListModel) GetItemType() GType {
+	return GType(C.g_list_model_get_item_type_safe(m.model))
 }
 
-// GetModelPointer returns the underlying GtkTreeModel pointer
-func (t *TreeModelImplementor) GetModelPointer() *C.GtkTreeModel {
-	return t.model
-}
-
-// GetIter gets an iterator pointing to a path
-func (t *TreeModelImplementor) GetIter(path *TreePath) (*TreeIter, bool) {
-	iter := &TreeIter{}
-	result := C.gtk_tree_model_get_iter(t.model, &iter.iter, path.path)
-	return iter, result == C.TRUE
-}
-
-// GetPath gets the path for an iterator
-func (t *TreeModelImplementor) GetPath(iter *TreeIter) *TreePath {
-	path := &TreePath{
-		path: C.gtk_tree_model_get_path(t.model, &iter.iter),
+// GetItem returns the item at the given position
+func (m *GListModel) GetItem(position int) interface{} {
+	item := C.g_list_model_get_item_safe(m.model, C.guint(position))
+	if item == nil {
+		return nil
 	}
-	runtime.SetFinalizer(path, (*TreePath).Free)
-	return path
+	
+	// We need to unref the item when we're done with it
+	defer C.g_object_unref(item)
+	
+	// Convert to appropriate Go type based on item type
+	// This depends on the specific use case and may need customization
+	return castGObjectToGoValue((*C.GObject)(item))
 }
 
-// GetValue gets the value of a cell
-func (t *TreeModelImplementor) GetValue(iter *TreeIter, column int) (interface{}, error) {
-	var value C.GValue
-	C.gtk_tree_model_get_value(t.model, &iter.iter, C.gint(column), &value)
-
-	// Handle basic types
-	gtype := C.get_value_type(&value)
-
-	var result interface{}
-
-	switch GType(gtype) {
-	case G_TYPE_STRING:
-		cstr := C.safe_get_string(&value)
-		result = C.GoString(cstr)
-	case G_TYPE_INT:
-		result = int(C.g_value_get_int(&value))
-	case G_TYPE_BOOLEAN:
-		result = C.g_value_get_boolean(&value) == C.TRUE
-	case G_TYPE_FLOAT:
-		result = float32(C.g_value_get_float(&value))
-	case G_TYPE_DOUBLE:
-		result = float64(C.g_value_get_double(&value))
-	default:
-		result = nil
-	}
-
-	C.g_value_unset(&value)
-	return result, nil
+// castGObjectToGoValue converts a GObject to a Go value
+// This is a placeholder and would need to be implemented based on your needs
+func castGObjectToGoValue(obj *C.GObject) interface{} {
+	// In a real implementation, you would check the object type
+	// and convert appropriately. For now, we just return the pointer.
+	return uintptr(unsafe.Pointer(obj))
 }
 
-// GetNColumns gets the number of columns
-func (t *TreeModelImplementor) GetNColumns() int {
-	return int(C.gtk_tree_model_get_n_columns(t.model))
-}
-
-// GetColumnType gets the type of a column
-func (t *TreeModelImplementor) GetColumnType(column int) GType {
-	return GType(C.gtk_tree_model_get_column_type(t.model, C.gint(column)))
-}
-
-// IterNext moves the iterator to the next row
-func (t *TreeModelImplementor) IterNext(iter *TreeIter) bool {
-	return C.gtk_tree_model_iter_next(t.model, &iter.iter) == C.TRUE
-}
-
-// TreeStore implements TreeModel for a tree store
-type TreeStore struct {
-	TreeModelImplementor
-	store *C.GtkTreeStore
-}
-
-// NewTreeStore creates a new TreeStore
-func NewTreeStore(types ...GType) *TreeStore {
-	// Convert Go types to C types
-	cTypes := make([]C.GType, len(types))
-	for i, t := range types {
-		cTypes[i] = C.GType(t)
-	}
-
-	// Create the tree store
-	store := &TreeStore{
-		store: C.gtk_tree_store_newv(C.gint(len(types)), (*C.GType)(&cTypes[0])),
-	}
-	store.model = (*C.GtkTreeModel)(unsafe.Pointer(store.store))
-
-	runtime.SetFinalizer(store, (*TreeStore).Free)
-	return store
-}
-
-// SetValue sets a value in the TreeStore
-func (s *TreeStore) SetValue(iter *TreeIter, column int, value interface{}) {
-	// Set value based on type using our C wrappers
-	switch v := value.(type) {
-	case string:
-		cstr := C.CString(v)
-		defer C.free(unsafe.Pointer(cstr))
-		C.tree_store_set_string(s.store, &iter.iter, C.gint(column), cstr)
-	case int:
-		C.tree_store_set_int(s.store, &iter.iter, C.gint(column), C.gint(v))
-	case bool:
-		var cbool C.gboolean
-		if v {
-			cbool = C.TRUE
-		} else {
-			cbool = C.FALSE
-		}
-		C.tree_store_set_boolean(s.store, &iter.iter, C.gint(column), cbool)
-	case float32:
-		C.tree_store_set_float(s.store, &iter.iter, C.gint(column), C.gfloat(v))
-	case float64:
-		C.tree_store_set_double(s.store, &iter.iter, C.gint(column), C.gdouble(v))
-	}
-}
-
-// Append appends a new row to the TreeStore
-func (s *TreeStore) Append(parent *TreeIter) *TreeIter {
-	iter := &TreeIter{}
-	var parentIter *C.GtkTreeIter
-	if parent != nil {
-		parentIter = &parent.iter
-	}
-	C.gtk_tree_store_append(s.store, &iter.iter, parentIter)
-	return iter
-}
-
-// Free frees the TreeStore
-func (s *TreeStore) Free() {
-	if s.store != nil {
-		C.g_object_unref(C.gpointer(unsafe.Pointer(s.store)))
-		s.store = nil
-		s.model = nil
-	}
-}
-
-// ListStore implements TreeModel for a list store
+// ListStore is a wrapper around a GListStore
 type ListStore struct {
-	TreeModelImplementor
-	store *C.GtkListStore
+	store *C.GListStore
+	model *GListModel // Wrapper for model interface
 }
 
-// NewListStore creates a new ListStore
-func NewListStore(types ...GType) *ListStore {
-	// Convert Go types to C types
-	cTypes := make([]C.GType, len(types))
-	for i, t := range types {
-		cTypes[i] = C.GType(t)
-	}
-
-	// Create the list store
+// NewListStore creates a new ListStore with the given item type
+func NewListStore(itemType GType) *ListStore {
 	store := &ListStore{
-		store: C.gtk_list_store_newv(C.gint(len(types)), (*C.GType)(&cTypes[0])),
+		store: C.create_list_store(C.GType(itemType)),
 	}
-	store.model = (*C.GtkTreeModel)(unsafe.Pointer(store.store))
-
+	
+	// Create model wrapper
+	store.model = NewGListModel((*C.GListModel)(unsafe.Pointer(store.store)))
+	
 	runtime.SetFinalizer(store, (*ListStore).Free)
 	return store
 }
 
-// SetValue sets a value in the ListStore
-func (s *ListStore) SetValue(iter *TreeIter, column int, value interface{}) {
-	// Set value based on type using our C wrappers
-	switch v := value.(type) {
-	case string:
-		cstr := C.CString(v)
-		defer C.free(unsafe.Pointer(cstr))
-		C.list_store_set_string(s.store, &iter.iter, C.gint(column), cstr)
-	case int:
-		C.list_store_set_int(s.store, &iter.iter, C.gint(column), C.gint(v))
-	case bool:
-		var cbool C.gboolean
-		if v {
-			cbool = C.TRUE
-		} else {
-			cbool = C.FALSE
-		}
-		C.list_store_set_boolean(s.store, &iter.iter, C.gint(column), cbool)
-	case float32:
-		C.list_store_set_float(s.store, &iter.iter, C.gint(column), C.gfloat(v))
-	case float64:
-		C.list_store_set_double(s.store, &iter.iter, C.gint(column), C.gdouble(v))
+// Append adds an item to the end of the list
+func (s *ListStore) Append(item interface{}) {
+	// Convert item to GObject based on its type
+	// This is a simplified version and would need to be expanded
+	itemPtr := convertGoValueToGObject(item)
+	if itemPtr != nil {
+		C.list_store_append(s.store, C.gpointer(itemPtr))
 	}
 }
 
-// Append appends a new row to the ListStore
-func (s *ListStore) Append() *TreeIter {
-	iter := &TreeIter{}
-	C.gtk_list_store_append(s.store, &iter.iter)
-	return iter
+// Insert inserts an item at the specified position
+func (s *ListStore) Insert(position int, item interface{}) {
+	itemPtr := convertGoValueToGObject(item)
+	if itemPtr != nil {
+		C.list_store_insert(s.store, C.guint(position), C.gpointer(itemPtr))
+	}
+}
+
+// Remove removes the item at the specified position
+func (s *ListStore) Remove(position int) {
+	C.list_store_remove(s.store, C.guint(position))
+}
+
+// GetModel returns the underlying GListModel wrapper
+func (s *ListStore) GetModel() *GListModel {
+	return s.model
 }
 
 // Free frees the ListStore
@@ -363,7 +289,353 @@ func (s *ListStore) Free() {
 	if s.store != nil {
 		C.g_object_unref(C.gpointer(unsafe.Pointer(s.store)))
 		s.store = nil
-		s.model = nil
+	}
+	
+	s.model = nil
+}
+
+// GetNItems returns the number of items in the model
+func (s *ListStore) GetNItems() int {
+	return s.model.GetNItems()
+}
+
+// GetItem returns the item at the given position
+func (s *ListStore) GetItem(position int) interface{} {
+	return s.model.GetItem(position)
+}
+
+// GetItemType returns the type of items in the model
+func (s *ListStore) GetItemType() GType {
+	return s.model.GetItemType()
+}
+
+// convertGoValueToGObject converts a Go value to a GObject
+// This is a placeholder and would need to be implemented based on your needs
+func convertGoValueToGObject(value interface{}) unsafe.Pointer {
+	// In a real implementation, you would create appropriate GObjects
+	// based on the Go type. For now, we just return nil.
+	return nil
+}
+
+// TreeListModel is a wrapper around a GTK TreeListModel
+type TreeListModel struct {
+	model *C.GtkTreeListModel
+	listModel *GListModel // Wrapper for model interface
+}
+
+// TreeListCreateModelFunc is the type for a function that creates child models for tree items
+type TreeListCreateModelFunc func(item interface{}) ListModel
+
+// treeListCreateModelCallback is the C callback for creating child models
+//export treeListCreateModelCallback
+func treeListCreateModelCallback(item *C.gpointer, userData C.gpointer) *C.GListModel {
+	// Extract Go function pointer from user data
+	// This is complex and would need careful implementation
+	// For now, return nil
+	return nil
+}
+
+// NewTreeListModel creates a new TreeListModel
+func NewTreeListModel(root ListModel, passthrough bool, autoexpand bool, createFunc TreeListCreateModelFunc) *TreeListModel {
+	// Get the GListModel from the root if it's our implementation
+	var rootModel *C.GListModel
+	if gm, ok := root.(*GListModel); ok {
+		rootModel = gm.model
+	} else {
+		// Create a wrapper around a custom ListModel implementation
+		// This is complex and would need careful implementation
+		// For now, return nil
+		return nil
+	}
+	
+	// Convert booleans to C booleans
+	var cPassthrough, cAutoexpand C.gboolean
+	if passthrough {
+		cPassthrough = C.TRUE
+	}
+	if autoexpand {
+		cAutoexpand = C.TRUE
+	}
+	
+	// Create the TreeListModel
+	// Note: The create_func callback is complex and would need careful implementation
+	// For now, we pass nil
+	model := C.create_tree_list_model(rootModel, cPassthrough, cAutoexpand, nil, nil, nil)
+	
+	result := &TreeListModel{
+		model: model,
+	}
+	
+	// Create model wrapper
+	result.listModel = NewGListModel((*C.GListModel)(unsafe.Pointer(model)))
+	
+	runtime.SetFinalizer(result, (*TreeListModel).Free)
+	return result
+}
+
+// GetModel returns the underlying GListModel wrapper
+func (t *TreeListModel) GetModel() *GListModel {
+	return t.listModel
+}
+
+// Free frees the TreeListModel
+func (t *TreeListModel) Free() {
+	if t.model != nil {
+		C.g_object_unref(C.gpointer(unsafe.Pointer(t.model)))
+		t.model = nil
+	}
+	
+	t.listModel = nil
+}
+
+// GetNItems returns the number of items in the model
+func (t *TreeListModel) GetNItems() int {
+	return t.listModel.GetNItems()
+}
+
+// GetItem returns the item at the given position
+func (t *TreeListModel) GetItem(position int) interface{} {
+	return t.listModel.GetItem(position)
+}
+
+// GetItemType returns the type of items in the model
+func (t *TreeListModel) GetItemType() GType {
+	return t.listModel.GetItemType()
+}
+
+// TreeListRow is a wrapper around a GTK TreeListRow
+type TreeListRow struct {
+	row *C.GtkTreeListRow
+}
+
+// NewTreeListRow creates a wrapper around a GTK TreeListRow
+func NewTreeListRow(row *C.GtkTreeListRow) *TreeListRow {
+	if row == nil {
+		return nil
+	}
+	
+	result := &TreeListRow{
+		row: row,
+	}
+	
+	runtime.SetFinalizer(result, (*TreeListRow).Free)
+	return result
+}
+
+// GetRow returns the TreeListRow at the specified position in a TreeListModel
+func (t *TreeListModel) GetRow(position int) *TreeListRow {
+	row := C.get_tree_list_row(t.model, C.guint(position))
+	return NewTreeListRow(row)
+}
+
+// GetChildren returns the children of the row as a GListModel
+func (r *TreeListRow) GetChildren() *GListModel {
+	children := C.tree_list_row_get_children(r.row)
+	if children == nil {
+		return nil
+	}
+	
+	return NewGListModel(children)
+}
+
+// GetItem returns the item represented by the row
+func (r *TreeListRow) GetItem() interface{} {
+	item := C.tree_list_row_get_item(r.row)
+	if item == nil {
+		return nil
+	}
+	
+	// We need to unref the item when we're done with it
+	defer C.g_object_unref(item)
+	
+	// Convert to appropriate Go type
+	return castGObjectToGoValue((*C.GObject)(item))
+}
+
+// IsExpandable returns whether the row is expandable
+func (r *TreeListRow) IsExpandable() bool {
+	return C.tree_list_row_is_expandable(r.row) == C.TRUE
+}
+
+// GetExpanded returns whether the row is expanded
+func (r *TreeListRow) GetExpanded() bool {
+	return C.tree_list_row_get_expanded(r.row) == C.TRUE
+}
+
+// SetExpanded sets whether the row is expanded
+func (r *TreeListRow) SetExpanded(expanded bool) {
+	var cExpanded C.gboolean
+	if expanded {
+		cExpanded = C.TRUE
+	}
+	C.tree_list_row_set_expanded(r.row, cExpanded)
+}
+
+// Free frees the TreeListRow
+func (r *TreeListRow) Free() {
+	if r.row != nil {
+		C.g_object_unref(C.gpointer(unsafe.Pointer(r.row)))
+		r.row = nil
 	}
 }
 
+// SimpleListModel is a basic Go implementation of the ListModel interface
+type SimpleListModel struct {
+	items     []interface{}
+	itemType  GType
+}
+
+// NewSimpleListModel creates a new SimpleListModel with the given item type
+func NewSimpleListModel(itemType GType) *SimpleListModel {
+	return &SimpleListModel{
+		items:    make([]interface{}, 0),
+		itemType: itemType,
+	}
+}
+
+// GetNItems returns the number of items in the model
+func (m *SimpleListModel) GetNItems() int {
+	return len(m.items)
+}
+
+// GetItem returns the item at the given position
+func (m *SimpleListModel) GetItem(position int) interface{} {
+	if position >= 0 && position < len(m.items) {
+		return m.items[position]
+	}
+	return nil
+}
+
+// GetItemType returns the type of items in the model
+func (m *SimpleListModel) GetItemType() GType {
+	return m.itemType
+}
+
+// AddItem adds an item to the model
+func (m *SimpleListModel) AddItem(item interface{}) {
+	m.items = append(m.items, item)
+}
+
+// ClearItems removes all items from the model
+func (m *SimpleListModel) ClearItems() {
+	m.items = make([]interface{}, 0)
+}
+
+// Helper functions for working with models
+
+// ValueFromGValue converts a GValue to a Go value based on its type
+func ValueFromGValue(value *C.GValue) interface{} {
+	if value == nil {
+		return nil
+	}
+
+	// Use safe wrapper functions to extract values based on type
+	switch {
+	case C.value_holds_string(value) != 0:
+		cstr := C.value_get_string_safe(value)
+		if cstr == nil {
+			return ""
+		}
+		return C.GoString(cstr)
+	case C.value_holds_int(value) != 0:
+		return int(C.value_get_int_safe(value))
+	case C.value_holds_boolean(value) != 0:
+		return C.value_get_boolean_safe(value) == C.TRUE
+	case C.value_holds_double(value) != 0:
+		return float64(C.value_get_double_safe(value))
+	case C.value_holds_float(value) != 0:
+		return float32(C.value_get_float_safe(value))
+	default:
+		return nil
+	}
+}
+
+// SetGValueFromValue sets a GValue from a Go value
+func SetGValueFromValue(gvalue *C.GValue, value interface{}) bool {
+	if gvalue == nil {
+		return false
+	}
+
+	// Initialize if needed
+	if C.value_get_type(gvalue) == 0 {
+		// Guess the type based on the value's type
+		switch value.(type) {
+		case string:
+			C.g_value_init(gvalue, C.G_TYPE_STRING)
+		case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+			C.g_value_init(gvalue, C.G_TYPE_INT)
+		case bool:
+			C.g_value_init(gvalue, C.G_TYPE_BOOLEAN)
+		case float64:
+			C.g_value_init(gvalue, C.G_TYPE_DOUBLE)
+		case float32:
+			C.g_value_init(gvalue, C.G_TYPE_FLOAT)
+		default:
+			return false
+		}
+	}
+
+	// Set the value based on its type
+	switch v := value.(type) {
+	case string:
+		cstr := C.CString(v)
+		defer C.free(unsafe.Pointer(cstr))
+		C.value_set_string(gvalue, cstr)
+		return true
+	case int:
+		C.value_set_int(gvalue, C.int(v))
+		return true
+	case bool:
+		var cbool C.gboolean
+		if v {
+			cbool = C.TRUE
+		} else {
+			cbool = C.FALSE
+		}
+		C.value_set_boolean(gvalue, cbool)
+		return true
+	case float64:
+		C.value_set_double(gvalue, C.double(v))
+		return true
+	case float32:
+		C.value_set_float(gvalue, C.float(v))
+		return true
+	default:
+		return false
+	}
+}
+
+// GenericModelData represents a generic data structure for models
+type GenericModelData struct {
+	Type      GType
+	Value     interface{}
+	UserData  interface{}
+	Reference bool
+}
+
+// NewGenericModelData creates a new GenericModelData
+func NewGenericModelData(value interface{}) *GenericModelData {
+	var dataType GType
+	
+	// Determine type
+	switch value.(type) {
+	case string:
+		dataType = G_TYPE_STRING
+	case int:
+		dataType = G_TYPE_INT
+	case bool:
+		dataType = G_TYPE_BOOLEAN
+	case float32:
+		dataType = G_TYPE_FLOAT
+	case float64:
+		dataType = G_TYPE_DOUBLE
+	default:
+		dataType = 0 // Unknown type
+	}
+	
+	return &GenericModelData{
+		Type:      dataType,
+		Value:     value,
+		Reference: false,
+	}
+}
