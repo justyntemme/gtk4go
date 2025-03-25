@@ -96,3 +96,25 @@ func (b *Box) SetHomogeneous(homogeneous bool) {
 	}
 	C.gtk_box_set_homogeneous((*C.GtkBox)(unsafe.Pointer(b.widget)), chomogeneous)
 }
+
+// SetHExpand sets whether the box expands horizontally
+func (b *Box) SetHExpand(expand bool) {
+	var cexpand C.gboolean
+	if expand {
+		cexpand = C.TRUE
+	} else {
+		cexpand = C.FALSE
+	}
+	C.gtk_widget_set_hexpand(b.widget, cexpand)
+}
+
+// SetVExpand sets whether the box expands vertically
+func (b *Box) SetVExpand(expand bool) {
+	var cexpand C.gboolean
+	if expand {
+		cexpand = C.TRUE
+	} else {
+		cexpand = C.FALSE
+	}
+	C.gtk_widget_set_vexpand(b.widget, cexpand)
+}
