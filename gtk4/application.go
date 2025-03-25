@@ -39,21 +39,44 @@ import (
 	"unsafe"
 )
 
+// ApplicationOption is a function that configures an application
+type ApplicationOption func(*Application)
+
 // Application represents a GTK application
 type Application struct {
 	app *C.GtkApplication
 }
 
 // NewApplication creates a new GTK application with the given ID
-func NewApplication(id string) *Application {
+func NewApplication(id string, options ...ApplicationOption) *Application {
 	cID := C.CString(id)
 	defer C.free(unsafe.Pointer(cID))
 
 	app := &Application{
 		app: C.gtk_application_new(cID, C.G_APPLICATION_DEFAULT_FLAGS),
 	}
+	
+	// Apply options
+	for _, option := range options {
+		option(app)
+	}
+	
 	runtime.SetFinalizer(app, (*Application).Destroy)
 	return app
+}
+
+// WithAction adds an action to the application at creation time
+func WithAction(action *Action) ApplicationOption {
+	return func(a *Application) {
+		a.GetActionGroup().AddAction(action)
+	}
+}
+
+// WithMenuBar sets the application menu bar at creation time
+func WithMenuBar(menu *Menu) ApplicationOption {
+	return func(a *Application) {
+		a.SetMenuBar(menu)
+	}
 }
 
 // AddWindow adds a window to the application and connects the activate signal
