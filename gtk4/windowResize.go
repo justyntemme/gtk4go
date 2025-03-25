@@ -6,12 +6,77 @@ package gtk4
 // #include <gtk/gtk.h>
 // #include <stdlib.h>
 //
-// // Callback for window size-allocate events
-// extern void windowSizeAllocateCallback(GtkWidget *widget, int width, int height, gpointer user_data);
+// // Property notify callbacks for window size changes
+// extern void windowPropertyNotifyCallback(GObject *object, GParamSpec *pspec, gpointer user_data);
 //
-// // Connect size-allocate signal for resize detection
-// static void connectSizeAllocate(GtkWidget *window) {
-//     g_signal_connect(window, "size-allocate", G_CALLBACK(windowSizeAllocateCallback), window);
+// // Set up window resize detection using property notifications
+// static void setupWindowResizeTracking(GtkWindow *window) {
+//     // Connect to default-width property changes
+//     g_signal_connect(window, "notify::default-width", 
+//                     G_CALLBACK(windowPropertyNotifyCallback), window);
+//     
+//     // Connect to default-height property changes
+//     g_signal_connect(window, "notify::default-height", 
+//                     G_CALLBACK(windowPropertyNotifyCallback), window);
+//
+//     // Connect to width-request changes
+//     g_signal_connect(window, "notify::width-request", 
+//                     G_CALLBACK(windowPropertyNotifyCallback), window);
+//     
+//     // Connect to height-request changes
+//     g_signal_connect(window, "notify::height-request", 
+//                     G_CALLBACK(windowPropertyNotifyCallback), window);
+//
+//     // Surface state changes (maximized, fullscreen, etc.)
+//     GdkSurface *surface = gtk_native_get_surface(GTK_NATIVE(window));
+//     if (surface) {
+//         g_signal_connect(surface, "notify::state", 
+//                         G_CALLBACK(windowPropertyNotifyCallback), window);
+//     }
+// }
+//
+// // Get current window size via width/height properties
+// static void getWindowSize(GtkWindow *window, int *width, int *height) {
+//     // Start with default values
+//     *width = 0;
+//     *height = 0;
+//     
+//     // Try the surface - most reliable for window dimensions
+//     GdkSurface *surface = gtk_native_get_surface(GTK_NATIVE(window));
+//     if (surface) {
+//         *width = gdk_surface_get_width(surface);
+//         *height = gdk_surface_get_height(surface);
+//         
+//         if (*width > 0 && *height > 0) {
+//             return;
+//         }
+//     }
+//     
+//     // Try with natural size
+//     int natural_width, natural_height;
+//     gtk_widget_measure(GTK_WIDGET(window), GTK_ORIENTATION_HORIZONTAL, -1,
+//                       NULL, &natural_width, NULL, NULL);
+//     gtk_widget_measure(GTK_WIDGET(window), GTK_ORIENTATION_VERTICAL, -1,
+//                       NULL, &natural_height, NULL, NULL);
+//                       
+//     if (natural_width > 0 && natural_height > 0) {
+//         *width = natural_width;
+//         *height = natural_height;
+//         return;
+//     }
+//     
+//     // Get the requested size
+//     int request_width, request_height;
+//     gtk_widget_get_size_request(GTK_WIDGET(window), &request_width, &request_height);
+//     
+//     if (request_width > 0 && request_height > 0) {
+//         *width = request_width;
+//         *height = request_height;
+//         return;
+//     }
+//     
+//     // Last resort: use default size
+//     gtk_window_get_default_size(window, width, height);
 // }
 import "C"
 
@@ -49,9 +114,9 @@ type windowResizeData struct {
 // ResizeCallback is a function called when resize state changes
 type ResizeCallback func()
 
-//export windowSizeAllocateCallback
-func windowSizeAllocateCallback(widget *C.GtkWidget, width, height C.int, userData C.gpointer) {
-	windowPtr := uintptr(unsafe.Pointer(widget))
+//export windowPropertyNotifyCallback
+func windowPropertyNotifyCallback(object *C.GObject, pspec *C.GParamSpec, userData C.gpointer) {
+	windowPtr := uintptr(unsafe.Pointer(userData))
 
 	windowResizeStateMutex.RLock()
 	data, exists := windowResizeState[windowPtr]
@@ -65,7 +130,15 @@ func windowSizeAllocateCallback(widget *C.GtkWidget, width, height C.int, userDa
 	lastTime, _ := data.lastResizeTime.Load().(time.Time)
 	data.lastResizeTime.Store(now)
 
-	// Get current dimensions
+	// Get current dimensions using C helper
+	var width, height C.int
+	C.getWindowSize((*C.GtkWindow)(unsafe.Pointer(userData)), &width, &height)
+	
+	// Only proceed if we got valid dimensions
+	if width <= 0 || height <= 0 {
+		return
+	}
+	
 	newWidth := int32(width)
 	newHeight := int32(height)
 	oldWidth := atomic.LoadInt32(&data.width)
@@ -132,13 +205,19 @@ func (w *Window) SetupResizeDetection(onResizeStart, onResizeEnd ResizeCallback)
 	data.lastResizeTime.Store(time.Time{})
 	data.resizeStartTime.Store(time.Time{})
 
+	// Get initial window size
+	var width, height C.int
+	C.getWindowSize((*C.GtkWindow)(unsafe.Pointer(w.widget)), &width, &height)
+	data.width = int32(width)
+	data.height = int32(height)
+
 	// Store in map
 	windowResizeStateMutex.Lock()
 	windowResizeState[windowPtr] = data
 	windowResizeStateMutex.Unlock()
 
-	// Connect size-allocate signal
-	C.connectSizeAllocate(w.widget)
+	// Set up signal connections for resize detection
+	C.setupWindowResizeTracking((*C.GtkWindow)(unsafe.Pointer(w.widget)))
 }
 
 // SetupCSSOptimizedResize sets up CSS optimization during resize
