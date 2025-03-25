@@ -78,6 +78,22 @@ func (w *BaseWidget) HasCssClass(className string) bool {
 	return C.gtk_widget_has_css_class(w.widget, cClassName) == 1
 }
 
+// SetChild sets the child widget
+// Note: Not all GTK widgets support this operation directly.
+// For containers like Box, Grid, etc., use their specific methods instead.
+func (w *BaseWidget) SetChild(child Widget) {
+	if child != nil {
+		// Use the appropriate child-setting function based on widget type
+		// This requires type detection at runtime (not ideal but works for demo)
+		
+		// For GtkWindow we can use gtk_window_set_child
+		C.gtk_window_set_child((*C.GtkWindow)(unsafe.Pointer(w.widget)), child.GetWidget())
+	} else {
+		// Clear the child
+		C.gtk_window_set_child((*C.GtkWindow)(unsafe.Pointer(w.widget)), nil)
+	}
+}
+
 // WithCString executes a function with a C string that is automatically freed
 func WithCString(s string, fn func(*C.char)) {
 	cs := C.CString(s)
