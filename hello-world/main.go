@@ -12,6 +12,8 @@ import (
 
 func main() {
 	// Initialize GTK (this is also done automatically on import)
+	// 
+	gtk4.EnableCallbackDebugging(true)
 	if err := gtk4go.Initialize(); err != nil {
 		log.Fatalf("Failed to initialize GTK: %v", err)
 	}
@@ -938,4 +940,3 @@ This demo showcases GTK4Go's layout containers and widgets.
 
 // Variable for long task cancellation
 var cancelFunc context.CancelFunc
-
