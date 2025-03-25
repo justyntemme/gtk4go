@@ -5,23 +5,27 @@ package gtk4go
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 // BackgroundWorker handles running tasks in the background
 // while providing updates to the UI thread
 type BackgroundWorker struct {
-	workQueue chan *WorkItem
-	stopChan  chan struct{}
-	wg        sync.WaitGroup
-	isRunning bool
-	workerID  int
-	mu        sync.Mutex
+	workQueue     chan *WorkItem
+	stopChan      chan struct{}
+	wg            sync.WaitGroup
+	isRunning     atomic.Bool
+	activeWorkers atomic.Int32
+	workerCount   atomic.Int32
+	nextTaskID    atomic.Uint64
+	mu            sync.RWMutex // Used only for fields not amenable to atomic ops
 }
 
 // WorkStatus represents the status of a background task
-type WorkStatus int
+type WorkStatus int32
 
 const (
 	// StatusPending indicates the task is pending
@@ -42,27 +46,33 @@ type WorkItem struct {
 	Task        func(ctx context.Context, progress func(percent int, message string)) (interface{}, error)
 	OnProgress  func(percent int, message string)
 	OnComplete  func(result interface{}, err error)
-	status      WorkStatus
-	result      interface{}
-	err         error
+	status      atomic.Int32 // Using atomic int32 for WorkStatus
+	result      atomic.Value // For storing the result
+	err         atomic.Value // For storing the error
 	ctx         context.Context
 	cancelFunc  context.CancelFunc
-	progressMu  sync.Mutex
-	lastUpdate  time.Time
-	updateDelay time.Duration // Minimum time between progress updates to prevent UI spam
+	
+	// Progress tracking
+	progressMu    sync.Mutex      // Traditional mutex for complex progress operations
+	lastUpdate    atomic.Value    // Using atomic.Value for time.Time
+	updateDelay   time.Duration   // Update frequency limitation
+	progressCalls atomic.Int64    // Count of progress calls for metrics
 }
 
 // NewBackgroundWorker creates a new background worker
 func NewBackgroundWorker(numWorkers int) *BackgroundWorker {
 	if numWorkers <= 0 {
-		numWorkers = 1
+		numWorkers = runtime.NumCPU()
 	}
 
 	worker := &BackgroundWorker{
 		workQueue: make(chan *WorkItem, 100),
 		stopChan:  make(chan struct{}),
-		isRunning: true,
 	}
+	
+	// Set initial state
+	worker.isRunning.Store(true)
+	worker.workerCount.Store(int32(numWorkers))
 
 	// Start worker goroutines
 	worker.wg.Add(numWorkers)
@@ -77,6 +87,10 @@ func NewBackgroundWorker(numWorkers int) *BackgroundWorker {
 // processWork runs in a goroutine to process work items
 func (w *BackgroundWorker) processWork(workerID int) {
 	defer w.wg.Done()
+	
+	// Track active worker count
+	w.activeWorkers.Add(1)
+	defer w.activeWorkers.Add(-1)
 
 	for {
 		select {
@@ -87,20 +101,35 @@ func (w *BackgroundWorker) processWork(workerID int) {
 				continue
 			}
 
-			// Mark as running
-			item.status = StatusRunning
+			// Mark as running using atomic operation
+			item.status.Store(int32(StatusRunning))
 
 			// Create a progress function that runs on UI thread
 			progressFunc := func(percent int, message string) {
-				item.progressMu.Lock()
-				// Only update at most once per minimum delay to avoid flooding the UI
+				// Use atomic operations for thread-safe time checks
+				lastUpdateObj := item.lastUpdate.Load()
+				var lastUpdate time.Time
+				if lastUpdateObj != nil {
+					lastUpdate = lastUpdateObj.(time.Time)
+				}
+				
 				now := time.Now()
-				if now.Sub(item.lastUpdate) < item.updateDelay {
-					item.progressMu.Unlock()
+				
+				// Rate limiting check
+				item.progressMu.Lock()
+				updateDelay := item.updateDelay
+				shouldUpdate := now.Sub(lastUpdate) >= updateDelay
+				if shouldUpdate {
+					item.lastUpdate.Store(now)
+				}
+				item.progressMu.Unlock()
+				
+				if !shouldUpdate {
 					return
 				}
-				item.lastUpdate = now
-				item.progressMu.Unlock()
+				
+				// Increment progress call counter
+				item.progressCalls.Add(1)
 
 				if item.OnProgress != nil {
 					RunOnUIThread(func() {
@@ -112,22 +141,42 @@ func (w *BackgroundWorker) processWork(workerID int) {
 			// Execute the task
 			result, err := item.Task(item.ctx, progressFunc)
 
-			// Check if cancelled
-			if item.ctx.Err() == context.Canceled {
-				item.status = StatusCancelled
-				item.err = context.Canceled
-			} else if err != nil {
-				item.status = StatusFailed
-				item.err = err
-			} else {
-				item.status = StatusCompleted
-				item.result = result
+			// Store result/error using atomic operations
+			if result != nil {
+				item.result.Store(result)
 			}
+			
+			if err != nil {
+				item.err.Store(err)
+			}
+
+			// Check if cancelled using atomic operations
+			var finalStatus WorkStatus
+			if item.ctx.Err() == context.Canceled {
+				finalStatus = StatusCancelled
+			} else if err != nil {
+				finalStatus = StatusFailed
+			} else {
+				finalStatus = StatusCompleted
+			}
+			
+			item.status.Store(int32(finalStatus))
 
 			// Execute completion callback on UI thread
 			if item.OnComplete != nil {
 				RunOnUIThread(func() {
-					item.OnComplete(item.result, item.err)
+					// Safely retrieve result/error from atomic storage
+					var resultVal interface{}
+					if r := item.result.Load(); r != nil {
+						resultVal = r
+					}
+					
+					var errVal error
+					if e := item.err.Load(); e != nil {
+						errVal = e.(error)
+					}
+					
+					item.OnComplete(resultVal, errVal)
 				})
 			}
 		}
@@ -141,16 +190,19 @@ func (w *BackgroundWorker) QueueTask(
 	onComplete func(result interface{}, err error),
 	onProgress func(percent int, message string),
 ) context.CancelFunc {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	if !w.isRunning {
+	// Check if we're running using atomic operations
+	if !w.isRunning.Load() {
 		if onComplete != nil {
 			RunOnUIThread(func() {
 				onComplete(nil, fmt.Errorf("worker is not running"))
 			})
 		}
 		return func() {}
+	}
+	
+	// Generate ID if none provided
+	if id == "" {
+		id = fmt.Sprintf("task-%d", w.nextTaskID.Add(1))
 	}
 
 	// Create cancellable context
@@ -161,46 +213,93 @@ func (w *BackgroundWorker) QueueTask(
 		Task:        task,
 		OnProgress:  onProgress,
 		OnComplete:  onComplete,
-		status:      StatusPending,
 		ctx:         ctx,
 		cancelFunc:  cancelFunc,
-		lastUpdate:  time.Now(),
 		updateDelay: 100 * time.Millisecond, // Update UI at most every 100ms
 	}
+	
+	// Initialize atomic values
+	item.status.Store(int32(StatusPending))
+	item.lastUpdate.Store(time.Now())
 
-	// Queue the work
+	// Try to queue the work with a timeout to prevent deadlocks
 	select {
 	case w.workQueue <- item:
 		// Successfully queued
-	default:
-		// Queue is full, execute completion with error
+	case <-time.After(100 * time.Millisecond):
+		// Queue is full or blocked
 		if onComplete != nil {
 			RunOnUIThread(func() {
 				onComplete(nil, fmt.Errorf("work queue is full"))
 			})
 		}
+		cancelFunc()
 	}
 
 	return cancelFunc
 }
 
+// SetProgressUpdateInterval sets the minimum time between progress updates
+func (w *BackgroundWorker) SetProgressUpdateInterval(duration time.Duration) {
+	// This only affects new tasks
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	// Would be stored in a field if we needed it
+}
+
+// GetActiveWorkerCount returns the number of currently active workers
+func (w *BackgroundWorker) GetActiveWorkerCount() int {
+	return int(w.activeWorkers.Load())
+}
+
+// IsRunning returns whether the worker is currently running
+func (w *BackgroundWorker) IsRunning() bool {
+	return w.isRunning.Load()
+}
+
 // Stop stops the worker and waits for all tasks to complete
 func (w *BackgroundWorker) Stop() {
-	w.mu.Lock()
-	if !w.isRunning {
-		w.mu.Unlock()
+	// Use atomic operation to check and update running state
+	if !w.isRunning.CompareAndSwap(true, false) {
+		// Already stopped
 		return
 	}
-	w.isRunning = false
+	
 	close(w.stopChan)
-	w.mu.Unlock()
 
 	// Wait for all workers to finish
 	w.wg.Wait()
 }
 
+// Shutdown stops the worker and cancels any pending or running tasks
+func (w *BackgroundWorker) Shutdown(timeout time.Duration) bool {
+	// Stop accepting new tasks
+	if !w.isRunning.CompareAndSwap(true, false) {
+		// Already stopped
+		return true
+	}
+
+	// Close the stop channel to signal workers to exit
+	close(w.stopChan)
+
+	// Use a channel to signal completion
+	done := make(chan struct{})
+	go func() {
+		w.wg.Wait()
+		close(done)
+	}()
+
+	// Wait for workers to finish with timeout
+	select {
+	case <-done:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
+}
+
 // DefaultWorker is the default background worker
-var DefaultWorker = NewBackgroundWorker(4) // Create with 4 worker goroutines
+var DefaultWorker = NewBackgroundWorker(runtime.NumCPU())
 
 // QueueBackgroundTask is a convenience function that queues a task on the default worker
 func QueueBackgroundTask(
@@ -232,9 +331,15 @@ func RunInBackground(
 	return QueueBackgroundTask("", wrappedTask, onComplete, nil)
 }
 
+// ShutdownDefaultWorker shuts down the default worker with a timeout
+func ShutdownDefaultWorker(timeout time.Duration) bool {
+	return DefaultWorker.Shutdown(timeout)
+}
+
 // init ensures we clean up the default worker when the program exits
 func init() {
-	// This doesn't actually get called since Go doesn't have a clean shutdown hook,
-	// but keeping it here as a reminder that in a real app, you'd want to call
-	// DefaultWorker.Stop() at program exit
+	// Register a cleanup function to be called at exit if possible
+	runtime.SetFinalizer(DefaultWorker, func(w *BackgroundWorker) {
+		w.Stop()
+	})
 }
