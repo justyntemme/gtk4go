@@ -139,12 +139,13 @@ func windowPropertyNotifyCallback(object *C.GObject, pspec *C.GParamSpec, userDa
 		return
 	}
 	
-	// Load old dimensions and store new dimensions atomically
+	// Load old dimensions atomically and store new dimensions atomically
 	oldWidth := data.width.Load()
 	oldHeight := data.height.Load()
 	newWidth := int32(width)
 	newHeight := int32(height)
 	
+	// Store the new dimensions using atomic operations
 	data.width.Store(newWidth)
 	data.height.Store(newHeight)
 
@@ -156,7 +157,7 @@ func windowPropertyNotifyCallback(object *C.GObject, pspec *C.GParamSpec, userDa
 	// Is this a new resize operation?
 	wasResizing := data.isResizing.Load()
 	if !wasResizing {
-		// Mark as resizing
+		// Mark as resizing using atomic operation
 		data.isResizing.Store(true)
 		data.resizeStartTime.Store(now)
 
@@ -179,7 +180,7 @@ func startResizeWatcher(data *windowResizeData, windowPtr uintptr) {
 	// Generate a unique watcher ID
 	newWatcherID := time.Now().UnixNano()
 	
-	// Try to set the new watcher ID, and get the old one
+	// Try to set the new watcher ID using atomic operation, and get the old one
 	oldWatcherID := data.watcherID.Swap(newWatcherID)
 	
 	// If oldWatcherID was 0, no watcher was running
@@ -200,12 +201,12 @@ func resizeWatcherGoroutine(data *windowResizeData, windowPtr uintptr, myID int6
 	// Wait for a short period to see if resize continues
 	time.Sleep(threshold)
 	
-	// Check if we're still the active watcher
+	// Check if we're still the active watcher using atomic load
 	if data.watcherID.Load() != myID {
 		return // Another watcher has taken over
 	}
 	
-	// Mark that no watcher is running
+	// Mark that no watcher is running using atomic operation
 	data.watcherID.Store(int64(0))
 	
 	// Check if no new resize events have occurred
@@ -216,7 +217,7 @@ func resizeWatcherGoroutine(data *windowResizeData, windowPtr uintptr, myID int6
 	
 	if time.Since(lastResizeTime) >= threshold {
 		// Resize has ended, but only if we're still in resize state
-		if data.isResizing.Swap(false) { // returns old value and sets to false
+		if data.isResizing.Swap(false) { // returns old value and sets to false atomically
 			// We were resizing and now we're not
 			
 			// Call resize end handler if set (thread-safe)
@@ -257,6 +258,8 @@ func (w *Window) SetupResizeDetection(onResizeStart, onResizeEnd ResizeCallback)
 	// Get initial window size
 	var width, height C.int
 	C.getWindowSize((*C.GtkWindow)(unsafe.Pointer(w.widget)), &width, &height)
+	
+	// Store the initial dimensions using atomic operations
 	data.width.Store(int32(width))
 	data.height.Store(int32(height))
 
@@ -306,6 +309,7 @@ func (w *Window) IsResizing() bool {
 		return false
 	}
 
+	// Use atomic operation to get the resizing state
 	return data.isResizing.Load()
 }
 
@@ -321,6 +325,7 @@ func (w *Window) GetSize() (width, height int32) {
 		return 0, 0
 	}
 
+	// Use atomic operations to get the dimensions
 	return data.width.Load(), data.height.Load()
 }
 
@@ -336,6 +341,7 @@ func (w *Window) SetResizeEndThreshold(threshold time.Duration) {
 		return
 	}
 
+	// Use mutex for non-atomic field
 	data.mu.Lock()
 	data.resizeEndThreshold = threshold
 	data.mu.Unlock()
