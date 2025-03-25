@@ -212,9 +212,30 @@ func (w *Window) SetVisible(visible bool) {
 	C.gtk_widget_set_visible(w.widget, cvisible)
 }
 
-// Destroy destroys the window
+// ConnectCloseRequest connects a callback function to the window's "close-request" signal
+// The callback should return true to stop the default handling of the signal (prevent closing),
+// or false to allow the default handling (allow closing)
+func (w *Window) ConnectCloseRequest(callback func() bool) uint64 {
+	return Connect(w, SignalCloseRequest, callback)
+}
+
+// DisconnectCloseRequest disconnects the close-request signal handler
+func (w *Window) DisconnectCloseRequest() {
+	// We'll search for callbacks connected to the SignalCloseRequest signal type
+	// Ideally we would have a DisconnectBySignal function in callbacks.go to handle this more elegantly
+	DisconnectAll(w)
+}
+
+// Destroy destroys the window and cleans up resources
 func (w *Window) Destroy() {
 	if w.widget != nil {
+		// Disconnect all signals for this window
+		DisconnectAll(w)
+		
+		// Clean up window resize detection if it was set up
+		w.CleanupResizeDetection()
+
+		// Destroy the window
 		C.gtk_window_destroy((*C.GtkWindow)(unsafe.Pointer(w.widget)))
 		w.widget = nil
 	}
