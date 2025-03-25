@@ -1,67 +1,25 @@
 // Package gtk4 provides entry widget functionality for GTK4
-// File: gtk4go/gtk4/entry.go
 package gtk4
 
 // #cgo pkg-config: gtk4
 // #include <gtk/gtk.h>
 // #include <stdlib.h>
 //
-// // Signal callback functions for entry signals
-// extern void entryChangedCallback(GtkEditable *editable, gpointer user_data);
-// extern void entryActivateCallback(GtkEntry *entry, gpointer user_data);
-//
-// // Connect entry signals with callbacks
-// static gulong connectEntryChanged(GtkWidget *entry, gpointer user_data) {
-//     return g_signal_connect(G_OBJECT(entry), "changed", G_CALLBACK(entryChangedCallback), user_data);
+// // Helper function to properly handle max length with correct types
+// static void set_max_length(GtkEntryBuffer *buffer, unsigned int max_length) {
+//     gtk_entry_buffer_set_max_length(buffer, (gsize)max_length);
 // }
 //
-// static gulong connectEntryActivate(GtkWidget *entry, gpointer user_data) {
-//     return g_signal_connect(G_OBJECT(entry), "activate", G_CALLBACK(entryActivateCallback), user_data);
+// // Helper function to get max length with correct type conversion
+// static unsigned int get_max_length(GtkEntryBuffer *buffer) {
+//     return (unsigned int)gtk_entry_buffer_get_max_length(buffer);
 // }
 import "C"
 
 import (
 	"runtime"
-	"sync"
 	"unsafe"
 )
-
-// EntryCallback represents a callback for entry events
-type EntryCallback func()
-
-var (
-	entryChangedCallbacks  = make(map[uintptr]EntryCallback)
-	entryActivateCallbacks = make(map[uintptr]EntryCallback)
-	entryCallbackMutex     sync.RWMutex
-)
-
-//export entryChangedCallback
-func entryChangedCallback(editable *C.GtkEditable, userData C.gpointer) {
-	entryCallbackMutex.RLock()
-	defer entryCallbackMutex.RUnlock()
-
-	// Convert entry pointer to uintptr for lookup
-	entryPtr := uintptr(unsafe.Pointer(editable))
-
-	// Find and call the callback
-	if callback, ok := entryChangedCallbacks[entryPtr]; ok {
-		callback()
-	}
-}
-
-//export entryActivateCallback
-func entryActivateCallback(entry *C.GtkEntry, userData C.gpointer) {
-	entryCallbackMutex.RLock()
-	defer entryCallbackMutex.RUnlock()
-
-	// Convert entry pointer to uintptr for lookup
-	entryPtr := uintptr(unsafe.Pointer(entry))
-
-	// Find and call the callback
-	if callback, ok := entryActivateCallbacks[entryPtr]; ok {
-		callback()
-	}
-}
 
 // EntryOption is a function that configures an entry
 type EntryOption func(*Entry)
@@ -152,6 +110,11 @@ func (e *Entry) SetEditable(editable bool) {
 	C.gtk_editable_set_editable((*C.GtkEditable)(unsafe.Pointer(e.widget)), ceditable)
 }
 
+// GetEditable gets whether the user can edit the text
+func (e *Entry) GetEditable() bool {
+	return C.gtk_editable_get_editable((*C.GtkEditable)(unsafe.Pointer(e.widget))) == C.TRUE
+}
+
 // SetVisibility sets whether the text is visible or hidden (e.g., for passwords)
 func (e *Entry) SetVisibility(visible bool) {
 	var cvisible C.gboolean
@@ -163,62 +126,40 @@ func (e *Entry) SetVisibility(visible bool) {
 	C.gtk_entry_set_visibility((*C.GtkEntry)(unsafe.Pointer(e.widget)), cvisible)
 }
 
+// GetVisibility gets whether the text is visible
+func (e *Entry) GetVisibility() bool {
+	return C.gtk_entry_get_visibility((*C.GtkEntry)(unsafe.Pointer(e.widget))) == C.TRUE
+}
+
 // ConnectChanged connects a callback function to the entry's "changed" signal
-func (e *Entry) ConnectChanged(callback EntryCallback) {
-	entryCallbackMutex.Lock()
-	defer entryCallbackMutex.Unlock()
+func (e *Entry) ConnectChanged(callback func()) {
+	Connect(e, SignalChanged, callback)
+}
 
-	// Store callback in map
-	entryPtr := uintptr(unsafe.Pointer(e.widget))
-	entryChangedCallbacks[entryPtr] = callback
-
-	// Connect signal
-	C.connectEntryChanged(e.widget, C.gpointer(unsafe.Pointer(e.widget)))
+// ConnectActivate connects a callback function to the entry's "activate" signal
+func (e *Entry) ConnectActivate(callback func()) {
+	Connect(e, SignalActivate, callback)
 }
 
 // DisconnectChanged disconnects the changed signal handler
 func (e *Entry) DisconnectChanged() {
-	entryCallbackMutex.Lock()
-	defer entryCallbackMutex.Unlock()
-
-	// Remove callback from map
-	entryPtr := uintptr(unsafe.Pointer(e.widget))
-	delete(entryChangedCallbacks, entryPtr)
-}
-
-// ConnectActivate connects a callback function to the entry's "activate" signal
-func (e *Entry) ConnectActivate(callback EntryCallback) {
-	entryCallbackMutex.Lock()
-	defer entryCallbackMutex.Unlock()
-
-	// Store callback in map
-	entryPtr := uintptr(unsafe.Pointer(e.widget))
-	entryActivateCallbacks[entryPtr] = callback
-
-	// Connect signal
-	C.connectEntryActivate(e.widget, C.gpointer(unsafe.Pointer(e.widget)))
+	// Since we don't have a specific disconnect function for a single signal type,
+	// we'll have to disconnect all signal handlers
+	DisconnectAll(e)
 }
 
 // DisconnectActivate disconnects the activate signal handler
 func (e *Entry) DisconnectActivate() {
-	entryCallbackMutex.Lock()
-	defer entryCallbackMutex.Unlock()
-
-	// Remove callback from map
-	entryPtr := uintptr(unsafe.Pointer(e.widget))
-	delete(entryActivateCallbacks, entryPtr)
+	// Since we don't have a specific disconnect function for a single signal type,
+	// we'll have to disconnect all signal handlers
+	DisconnectAll(e)
 }
 
 // Destroy destroys the entry and cleans up resources
 func (e *Entry) Destroy() {
-	entryCallbackMutex.Lock()
-	defer entryCallbackMutex.Unlock()
-
-	// Remove callbacks from maps if they exist
-	entryPtr := uintptr(unsafe.Pointer(e.widget))
-	delete(entryChangedCallbacks, entryPtr)
-	delete(entryActivateCallbacks, entryPtr)
-
+	// Disconnect all signals
+	DisconnectAll(e)
+	
 	// Call base destroy method
 	e.BaseWidget.Destroy()
 }
@@ -277,6 +218,18 @@ func (b *EntryBuffer) Free() {
 	}
 }
 
+// SetMaxLength sets the maximum length of the text in the buffer
+func (b *EntryBuffer) SetMaxLength(length uint) {
+	// Use our helper function to handle type conversion correctly
+	C.set_max_length(b.buffer, C.uint(length))
+}
+
+// GetMaxLength gets the maximum length of the text in the buffer
+func (b *EntryBuffer) GetMaxLength() uint {
+	// Use our helper function to handle type conversion correctly
+	return uint(C.get_max_length(b.buffer))
+}
+
 // InputPurpose defines the purpose of an entry
 type InputPurpose int
 
@@ -303,6 +256,16 @@ const (
 	InputPurposePin InputPurpose = C.GTK_INPUT_PURPOSE_PIN
 )
 
+// SetInputPurpose sets the purpose of the entry
+func (e *Entry) SetInputPurpose(purpose InputPurpose) {
+	C.gtk_entry_set_input_purpose((*C.GtkEntry)(unsafe.Pointer(e.widget)), C.GtkInputPurpose(purpose))
+}
+
+// GetInputPurpose gets the purpose of the entry
+func (e *Entry) GetInputPurpose() InputPurpose {
+	return InputPurpose(C.gtk_entry_get_input_purpose((*C.GtkEntry)(unsafe.Pointer(e.widget))))
+}
+
 // InputHints defines input hints for an entry
 type InputHints int
 
@@ -318,3 +281,64 @@ const (
 	// InputHintsLowercase to prefer lowercase
 	InputHintsLowercase InputHints = C.GTK_INPUT_HINT_LOWERCASE
 )
+
+// SetInputHints sets the input hints for the entry
+func (e *Entry) SetInputHints(hints InputHints) {
+	C.gtk_entry_set_input_hints((*C.GtkEntry)(unsafe.Pointer(e.widget)), C.GtkInputHints(hints))
+}
+
+// GetInputHints gets the input hints for the entry
+func (e *Entry) GetInputHints() InputHints {
+	return InputHints(C.gtk_entry_get_input_hints((*C.GtkEntry)(unsafe.Pointer(e.widget))))
+}
+
+// SetAlignment sets the alignment for the entry text
+func (e *Entry) SetAlignment(xalign float32) {
+	C.gtk_entry_set_alignment((*C.GtkEntry)(unsafe.Pointer(e.widget)), C.gfloat(xalign))
+}
+
+// GetAlignment gets the alignment for the entry text
+func (e *Entry) GetAlignment() float32 {
+	return float32(C.gtk_entry_get_alignment((*C.GtkEntry)(unsafe.Pointer(e.widget))))
+}
+
+// SetProgressFraction sets the current fraction of the task that's been completed
+func (e *Entry) SetProgressFraction(fraction float64) {
+	C.gtk_entry_set_progress_fraction((*C.GtkEntry)(unsafe.Pointer(e.widget)), C.gdouble(fraction))
+}
+
+// GetProgressFraction gets the current fraction of the task that's been completed
+func (e *Entry) GetProgressFraction() float64 {
+	return float64(C.gtk_entry_get_progress_fraction((*C.GtkEntry)(unsafe.Pointer(e.widget))))
+}
+
+// SetProgressPulseStep sets the fraction of total entry width to move the progress bouncing block
+func (e *Entry) SetProgressPulseStep(fraction float64) {
+	C.gtk_entry_set_progress_pulse_step((*C.GtkEntry)(unsafe.Pointer(e.widget)), C.gdouble(fraction))
+}
+
+// GetProgressPulseStep gets the fraction of total entry width to move the progress bouncing block
+func (e *Entry) GetProgressPulseStep() float64 {
+	return float64(C.gtk_entry_get_progress_pulse_step((*C.GtkEntry)(unsafe.Pointer(e.widget))))
+}
+
+// ProgressPulse causes the entry's progress indicator to enter "activity mode"
+func (e *Entry) ProgressPulse() {
+	C.gtk_entry_progress_pulse((*C.GtkEntry)(unsafe.Pointer(e.widget)))
+}
+
+// SetEnableUndo sets whether the user can undo/redo entry edits
+func (e *Entry) SetEnableUndo(enabled bool) {
+	var cenabled C.gboolean
+	if enabled {
+		cenabled = C.TRUE
+	} else {
+		cenabled = C.FALSE
+	}
+	C.gtk_editable_set_enable_undo((*C.GtkEditable)(unsafe.Pointer(e.widget)), cenabled)
+}
+
+// GetEnableUndo gets whether the user can undo/redo entry edits
+func (e *Entry) GetEnableUndo() bool {
+	return C.gtk_editable_get_enable_undo((*C.GtkEditable)(unsafe.Pointer(e.widget))) == C.TRUE
+}
