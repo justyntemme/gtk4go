@@ -46,6 +46,16 @@ import (
 // SignalType represents the type of GTK signal
 type SignalType string
 
+// SignalSource represents the source of a signal (to distinguish between signals with the same name)
+type SignalSource int
+
+const (
+	// Signal sources
+	SourceGeneric SignalSource = iota
+	SourceListView
+	SourceAction
+)
+
 // Common GTK signal types
 const (
 	// Button signals
@@ -61,7 +71,7 @@ const (
 	// Dialog signals
 	SignalResponse SignalType = "response"
 
-	// ListView signals
+	// ListView signals - same name as action signal but different context
 	SignalListActivate SignalType = "activate"
 
 	// SelectionModel signals
@@ -70,7 +80,7 @@ const (
 	// Adjustment signals
 	SignalValueChanged SignalType = "value-changed"
 
-	// Action signals
+	// Action signals - same name as list signal but different context
 	SignalActionActivate SignalType = "activate"
 )
 
@@ -92,6 +102,7 @@ type callbackData struct {
 	callback  interface{}
 	objectPtr uintptr
 	signal    SignalType
+	source    SignalSource // Added field to track signal source
 	hasParam  bool
 	hasReturn bool
 	handlerID C.gulong
@@ -125,11 +136,20 @@ func Connect(object interface{}, signal SignalType, callback interface{}) (handl
 	// Check callback signature to determine parameter and return type
 	hasParam, hasReturn := analyzeCallbackSignature(callback)
 
+	// Determine signal source based on object type and signal
+	source := SourceGeneric
+	if _, isListView := object.(*ListView); isListView && signal == SignalListActivate {
+		source = SourceListView
+	} else if _, isAction := object.(*Action); isAction && signal == SignalActionActivate {
+		source = SourceAction
+	}
+
 	// Create callback data
 	data := &callbackData{
 		callback:  callback,
 		objectPtr: objectPtr,
 		signal:    signal,
+		source:    source,
 		hasParam:  hasParam,
 		hasReturn: hasReturn,
 		handlerID: 0, // Will be set after connection
@@ -161,7 +181,8 @@ func Connect(object interface{}, signal SignalType, callback interface{}) (handl
 	// Store callback by object and signal for direct lookups
 	globalCallbackManager.storeObjectCallback(objectPtr, signal, callback)
 
-	DebugLog(DebugLevelInfo, DebugComponentCallback, "Connected signal %s with ID %d to object %p", signal, id, objectPtr)
+	DebugLog(DebugLevelInfo, DebugComponentCallback, "Connected signal %s with ID %d to object %p (source: %d)",
+		signal, id, objectPtr, source)
 
 	return id
 }
@@ -459,32 +480,67 @@ func callbackHandlerWithParam(object *C.GObject, param C.gpointer, data C.gpoint
 
 	callbackData := value.(*callbackData)
 	paramVal := int(uintptr(param))
-	DebugLog(DebugLevelVerbose, DebugComponentCallback, "callbackHandlerWithParam: executing callback ID %d for signal %s with param %v",
-		id, callbackData.signal, paramVal)
+	DebugLog(DebugLevelVerbose, DebugComponentCallback, "callbackHandlerWithParam: executing callback ID %d for signal %s with param %v (source: %d)",
+		id, callbackData.signal, paramVal, callbackData.source)
 
-	// Handle different callback signatures based on the signal type
-	switch callbackData.signal {
-	case SignalResponse:
+	// Handle different callback signatures based on the signal type and source
+	switch {
+	case callbackData.signal == SignalResponse:
 		// For dialog responses, param is the response ID
 		if callback, ok := callbackData.callback.(func(ResponseType)); ok {
 			execCallback(callback, ResponseType(uintptr(param)))
 		}
 
-	case SignalSelectionChanged:
+	case callbackData.signal == SignalSelectionChanged:
 		// For selection changed, we have position and count
-		// Note: This is a simplification as we're only passing position
 		if callback, ok := callbackData.callback.(func(int)); ok {
 			execCallback(callback, paramVal)
 		} else if callback, ok := callbackData.callback.(func(int, int)); ok {
 			// In a real implementation, you'd extract both position and count
 			execCallback(callback, paramVal, 0)
 		}
-	case SignalActionActivate:
-		// For action activation, handle the parameter
-		// In most cases we just want to call the callback without parameters
+
+	case callbackData.signal == SignalListActivate && callbackData.source == SourceListView:
+		// For ListView activation - check for multiple possible types
+		// First try direct function type
+		if callback, ok := callbackData.callback.(func(int)); ok {
+			DebugLog(DebugLevelInfo, DebugComponentListView, 
+				"Executing list activate callback for position %d", paramVal)
+			execCallback(callback, paramVal)
+		} else if callback, ok := callbackData.callback.(ListViewActivateCallback); ok {
+			// Then try the specific callback type
+			DebugLog(DebugLevelInfo, DebugComponentListView, 
+				"Executing ListViewActivateCallback for position %d", paramVal)
+			execCallback(func(pos int) {
+				callback(pos)
+			}, paramVal)
+		} else {
+			// Log error if neither type matches
+			DebugLog(DebugLevelError, DebugComponentListView,
+				"ListActivate callback has wrong type: %T, expected func(int) or ListViewActivateCallback", 
+				callbackData.callback)
+		}
+		
+	case callbackData.signal == SignalActionActivate && callbackData.source == SourceAction:
+		// For Action activation
+		if callback, ok := callbackData.callback.(func()); ok {
+			DebugLog(DebugLevelInfo, DebugComponentAction, 
+				"Executing action activate callback")
+			execCallback(callback)
+		} else {
+			DebugLog(DebugLevelError, DebugComponentAction,
+				"ActionActivate callback has wrong type: %T, expected func()", callbackData.callback)
+		}
+		
+	case callbackData.signal == SignalActivate:
+		// For general activation (Entry, etc)
 		if callback, ok := callbackData.callback.(func()); ok {
 			execCallback(callback)
+		} else {
+			DebugLog(DebugLevelError, DebugComponentCallback,
+				"Activate callback has wrong type: %T, expected func()", callbackData.callback)
 		}
+		
 	default:
 		// For other cases, try to call with an int parameter
 		if callback, ok := callbackData.callback.(func(int)); ok {
@@ -492,8 +548,12 @@ func callbackHandlerWithParam(object *C.GObject, param C.gpointer, data C.gpoint
 		} else if callback, ok := callbackData.callback.(func(interface{})); ok {
 			// For callbacks that accept any parameter
 			execCallback(callback, paramVal)
+		} else if callback, ok := callbackData.callback.(func()); ok {
+			// Try no parameter callback as last resort
+			execCallback(callback)
 		} else {
-			DebugLog(DebugLevelError, DebugComponentCallback, "callbackHandlerWithParam: callback has wrong type: %T", callbackData.callback)
+			DebugLog(DebugLevelError, DebugComponentCallback, 
+				"callbackHandlerWithParam: callback has wrong type: %T", callbackData.callback)
 		}
 	}
 }
@@ -575,3 +635,5 @@ func GetCallbackStats() map[string]int {
 	return stats
 }
 
+// Note: StoreDirectCallback and SafeCallback are already defined in action.go and base.go respectively
+// They have been removed from this file to fix duplicate declarations

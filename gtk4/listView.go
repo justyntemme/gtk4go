@@ -50,10 +50,78 @@ package gtk4
 // static gboolean listViewGetEnableRubberband(GtkListView *list_view) {
 //     return gtk_list_view_get_enable_rubberband(list_view);
 // }
+//
+// // New in GTK 4.12: Scroll to API
+// static void listViewScrollTo(GtkListView *list_view, guint position, GtkListScrollFlags flags) {
+//     #if GTK_CHECK_VERSION(4, 12, 0)
+//     #if GTK_CHECK_VERSION(4, 14, 0)
+//         // In GTK 4.14+ the function requires a scroll_info parameter
+//         GtkScrollInfo *scroll_info = NULL; // Default to NULL for automatic scrolling
+//         gtk_list_view_scroll_to(list_view, position, flags, scroll_info);
+//     #else
+//         // In GTK 4.12-4.13, the function only takes position and flags
+//         gtk_list_view_scroll_to(list_view, position, flags);
+//     #endif
+//     #endif
+// }
+//
+// // New in GTK 4.12: Tab behavior API
+// static void listViewSetTabBehavior(GtkListView *list_view, GtkListTabBehavior behavior) {
+//     #if GTK_CHECK_VERSION(4, 12, 0)
+//     gtk_list_view_set_tab_behavior(list_view, behavior);
+//     #endif
+// }
+//
+// static GtkListTabBehavior listViewGetTabBehavior(GtkListView *list_view) {
+//     #if GTK_CHECK_VERSION(4, 12, 0)
+//     return gtk_list_view_get_tab_behavior(list_view);
+//     #else
+//     return 0;
+//     #endif
+// }
+//
+// // New in GTK 4.12: Header factory API
+// static void listViewSetHeaderFactory(GtkListView *list_view, GtkListItemFactory *factory) {
+//     #if GTK_CHECK_VERSION(4, 12, 0)
+//     gtk_list_view_set_header_factory(list_view, factory);
+//     #endif
+// }
+//
+// static GtkListItemFactory* listViewGetHeaderFactory(GtkListView *list_view) {
+//     #if GTK_CHECK_VERSION(4, 12, 0)
+//     return gtk_list_view_get_header_factory(list_view);
+//     #else
+//     return NULL;
+//     #endif
+// }
 import "C"
 
 import (
 	"unsafe"
+)
+
+// ListScrollFlags represents the flags for scrolling to an item in the list
+type ListScrollFlags int
+
+const (
+	// ListScrollNone indicates no special behavior
+	ListScrollNone ListScrollFlags = 0
+	// ListScrollFocus means focus the item when scrolling
+	ListScrollFocus ListScrollFlags = 1 << 0
+	// ListScrollSelect means select the item when scrolling
+	ListScrollSelect ListScrollFlags = 1 << 1
+)
+
+// ListTabBehavior represents the behavior for tab navigation
+type ListTabBehavior int
+
+const (
+	// ListTabAll allows tab to focus all items
+	ListTabAll ListTabBehavior = 0
+	// ListTabItem allows tab to focus only items
+	ListTabItem ListTabBehavior = 1
+	// ListTabRow allows tab to focus entire rows
+	ListTabRow ListTabBehavior = 2
 )
 
 // ListViewActivateCallback represents a callback for list view item activation
@@ -67,6 +135,7 @@ type ListView struct {
 	BaseWidget
 	selectionModel SelectionModel
 	factory        ListItemFactory
+	headerFactory  ListItemFactory
 }
 
 // NewListView creates a new GTK list view
@@ -136,6 +205,23 @@ func WithEnableRubberband(enableRubberband bool) ListViewOption {
 	}
 }
 
+// WithTabBehavior sets the tab behavior for the list view (GTK 4.12+)
+func WithTabBehavior(behavior ListTabBehavior) ListViewOption {
+	return func(lv *ListView) {
+		C.listViewSetTabBehavior((*C.GtkListView)(unsafe.Pointer(lv.widget)), C.GtkListTabBehavior(behavior))
+	}
+}
+
+// WithHeaderFactory sets the header factory for the list view (GTK 4.12+)
+func WithHeaderFactory(factory ListItemFactory) ListViewOption {
+	return func(lv *ListView) {
+		if factory != nil {
+			C.listViewSetHeaderFactory((*C.GtkListView)(unsafe.Pointer(lv.widget)), factory.GetListItemFactory())
+			lv.headerFactory = factory
+		}
+	}
+}
+
 // SetModel sets the selection model for the list view
 func (lv *ListView) SetModel(model SelectionModel) {
 	if model != nil {
@@ -166,6 +252,22 @@ func (lv *ListView) SetFactory(factory ListItemFactory) {
 // GetFactory returns the list item factory for the list view
 func (lv *ListView) GetFactory() ListItemFactory {
 	return lv.factory
+}
+
+// SetHeaderFactory sets the header factory for the list view (GTK 4.12+)
+func (lv *ListView) SetHeaderFactory(factory ListItemFactory) {
+	if factory != nil {
+		C.listViewSetHeaderFactory((*C.GtkListView)(unsafe.Pointer(lv.widget)), factory.GetListItemFactory())
+		lv.headerFactory = factory
+	} else {
+		C.listViewSetHeaderFactory((*C.GtkListView)(unsafe.Pointer(lv.widget)), nil)
+		lv.headerFactory = nil
+	}
+}
+
+// GetHeaderFactory returns the header factory for the list view (GTK 4.12+)
+func (lv *ListView) GetHeaderFactory() ListItemFactory {
+	return lv.headerFactory
 }
 
 // SetShowSeparators sets whether to show separators between items
@@ -216,30 +318,38 @@ func (lv *ListView) GetEnableRubberband() bool {
 	return C.listViewGetEnableRubberband((*C.GtkListView)(unsafe.Pointer(lv.widget))) != 0
 }
 
+// SetTabBehavior sets the tab behavior for the list view (GTK 4.12+)
+func (lv *ListView) SetTabBehavior(behavior ListTabBehavior) {
+	C.listViewSetTabBehavior((*C.GtkListView)(unsafe.Pointer(lv.widget)), C.GtkListTabBehavior(behavior))
+}
+
+// GetTabBehavior returns the tab behavior for the list view (GTK 4.12+)
+func (lv *ListView) GetTabBehavior() ListTabBehavior {
+	return ListTabBehavior(C.listViewGetTabBehavior((*C.GtkListView)(unsafe.Pointer(lv.widget))))
+}
+
+// ScrollTo scrolls to the item at the given position (GTK 4.12+)
+func (lv *ListView) ScrollTo(position int, flags ListScrollFlags) {
+	C.listViewScrollTo((*C.GtkListView)(unsafe.Pointer(lv.widget)), C.guint(position), C.GtkListScrollFlags(flags))
+}
+
 // ConnectActivate connects a callback for item activation
-// This needs to use a wrapper to correctly handle the integer parameter
 func (lv *ListView) ConnectActivate(callback ListViewActivateCallback) {
 	if callback == nil {
 		return
 	}
 
-	// We need to use a wrapper function to properly adapt the parameter type
-	Connect(lv, SignalListActivate, func(param interface{}) {
-		// The callback system in callbacks.go passes parameters as interface{}
-		// We need to convert it to the correct type (int) for our callback
-		if positionVal, ok := param.(int); ok {
-			// Log successful connection
-			DebugLog(DebugLevelVerbose, DebugComponentListView, 
-				"ListView activate callback triggered for position: %d", positionVal)
-			callback(positionVal)
-		} else {
-			// Handle potential type mismatches and debug info
-			DebugLog(DebugLevelError, DebugComponentListView, 
-				"Type mismatch on position parameter: expected int, got %T", param)
-			// Default to 0 if the parameter type is not what we expect
-			callback(0)
-		}
-	})
+	// To avoid type issues, convert the ListViewActivateCallback to a regular func(int)
+	// since that's what the callback handler expects
+	rawCallback := func(position int) {
+		callback(position)
+	}
+
+	// Connect using the raw callback
+	Connect(lv, SignalListActivate, rawCallback)
+
+	DebugLog(DebugLevelInfo, DebugComponentListView, 
+		"Connected activate callback to ListView %p", unsafe.Pointer(lv.widget))
 }
 
 // Destroy overrides BaseWidget's Destroy to clean up list view resources
