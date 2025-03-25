@@ -217,8 +217,29 @@ func (lv *ListView) GetEnableRubberband() bool {
 }
 
 // ConnectActivate connects a callback for item activation
+// This needs to use a wrapper to correctly handle the integer parameter
 func (lv *ListView) ConnectActivate(callback ListViewActivateCallback) {
-	Connect(lv, SignalListActivate, callback)
+	if callback == nil {
+		return
+	}
+
+	// We need to use a wrapper function to properly adapt the parameter type
+	Connect(lv, SignalListActivate, func(param interface{}) {
+		// The callback system in callbacks.go passes parameters as interface{}
+		// We need to convert it to the correct type (int) for our callback
+		if positionVal, ok := param.(int); ok {
+			// Log successful connection
+			DebugLog(DebugLevelVerbose, DebugComponentListView, 
+				"ListView activate callback triggered for position: %d", positionVal)
+			callback(positionVal)
+		} else {
+			// Handle potential type mismatches and debug info
+			DebugLog(DebugLevelError, DebugComponentListView, 
+				"Type mismatch on position parameter: expected int, got %T", param)
+			// Default to 0 if the parameter type is not what we expect
+			callback(0)
+		}
+	})
 }
 
 // Destroy overrides BaseWidget's Destroy to clean up list view resources
