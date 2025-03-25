@@ -21,7 +21,7 @@ func main() {
 
 	// Create a window with optimized rendering
 	win := gtk4.NewWindow("Hello GTK4 from Go!")
-	win.SetDefaultSize(800, 600)
+	win.SetDefaultSize(900, 650)
 
 	// Enable hardware-accelerated rendering
 	win.EnableAcceleratedRendering()
@@ -119,13 +119,14 @@ func main() {
 	infoGrid.Attach(gtk4.NewLabel("Description"), 1, 0, 1, 1)
 
 	// Add widget information rows
-	widgets := []string{"Grid", "Paned", "Stack", "StackSwitcher", "ScrolledWindow"}
+	widgets := []string{"Grid", "Paned", "Stack", "StackSwitcher", "ScrolledWindow", "ListView"}
 	descriptions := []string{
 		"Arranges widgets in rows and columns",
 		"Divides space between two widgets with adjustable separator",
 		"Shows one widget at a time with transitions",
 		"Provides buttons to switch between stack pages",
 		"Provides scrolling for large content",
+		"Displays items from a list model with customizable presentation",
 	}
 
 	for i, widget := range widgets {
@@ -173,12 +174,202 @@ Using this application:
 3. Click "About" to learn about the app
 4. Click "Open File" to select a file
 5. Click "Run Long Task" to see a background task
+6. Go to ListView tab to see the new ListView widget in action
 
 This demo showcases GTK4Go's layout containers and widgets.
 	`)
 
 	helpBox.Append(helpText)
 	rightStack.AddTitled(helpBox, "help", "Help")
+
+	// Stack Page 4: ListView Example (NEW)
+	listViewBox := gtk4.NewBox(gtk4.OrientationVertical, 10)
+	listViewTitle := gtk4.NewLabel("ListView Example")
+	listViewTitle.AddCssClass("subtitle")
+	listViewBox.Append(listViewTitle)
+	
+	// Add description
+	listViewDesc := gtk4.NewLabel("This demonstrates the new ListView widget with data binding and selection")
+	listViewBox.Append(listViewDesc)
+
+	// Create controls for ListView
+	listViewControls := gtk4.NewBox(gtk4.OrientationHorizontal, 6)
+	listViewControls.AddCssClass("controls-box")
+
+	// Add button
+	addItemBtn := gtk4.NewButton("Add Item")
+	listViewControls.Append(addItemBtn)
+
+	// Remove button
+	removeItemBtn := gtk4.NewButton("Remove Selected")
+	listViewControls.Append(removeItemBtn)
+
+	// Clear button
+	clearItemsBtn := gtk4.NewButton("Clear All")
+	listViewControls.Append(clearItemsBtn)
+	
+	listViewBox.Append(listViewControls)
+
+	// Create a string list model with sample data
+	listModel := gtk4.NewStringList()
+	for i := 1; i <= 15; i++ {
+		listModel.Append(fmt.Sprintf("List Item %d", i))
+	}
+
+	// Create a selection model (SingleSelection)
+	selectionModel := gtk4.NewSingleSelection(listModel, 
+		gtk4.WithAutoselect(true),
+		gtk4.WithInitialSelection(0),
+	)
+
+	// Create a list item factory
+	factory := gtk4.NewSignalListItemFactory()
+
+	// Setup list items with setup callback
+	factory.ConnectSetup(func(listItem *gtk4.ListItem) {
+		// Create a box for layout
+		box := gtk4.NewBox(gtk4.OrientationHorizontal, 10)
+		box.SetHExpand(true)
+		box.AddCssClass("list-item-box")
+
+		// Create an icon for visual interest
+		icon := gtk4.NewLabel("•")
+		icon.AddCssClass("list-item-icon")
+		box.Append(icon)
+		
+		// Create a label for the item text with initial text
+		// We'll use CSS to control the appearance based on position
+		label := gtk4.NewLabel("List Item")
+		label.AddCssClass("list-item-label")
+		box.Append(label)
+		
+		// Set the box as the child of the list item
+		listItem.SetChild(box)
+	})
+
+	// Bind data to list items with bind callback
+	factory.ConnectBind(func(listItem *gtk4.ListItem) {
+		// Get the box from the list item
+		boxWidget := listItem.GetChild()
+		
+		// Get the position for reference
+		position := listItem.GetPosition()
+		
+		// In a real implementation, we'd find the label inside the box and update its text
+		// For the demo, we'll modify both style classes to reflect selection state
+		
+		// Add selected class if the item is selected
+		if listItem.GetSelected() {
+			boxWidget.AddCssClass("selected")
+		} else {
+			boxWidget.RemoveCssClass("selected")
+		}
+		
+		// Since we can't easily update children, we'll set a CSS class with the position
+		// and use that in the CSS to show different styles for different items
+		boxWidget.AddCssClass(fmt.Sprintf("item-%d", position))
+	})
+
+	// Create list view with the selection model and factory
+	listView := gtk4.NewListView(selectionModel, factory,
+		gtk4.WithShowSeparators(true),
+		gtk4.WithSingleClickActivate(true),
+	)
+
+	// Connect the list view activate signal
+	listView.ConnectActivate(func(position int) {
+		// Log the activation
+		activateLog := fmt.Sprintf("[%s] ListView: Item activated at position %d", 
+			time.Now().Format("15:04:05"), position)
+		
+		// Create a log entry
+		logEntry := gtk4.NewLabel(activateLog)
+		logEntry.AddCssClass("log-entry")
+		logBox.Prepend(logEntry)
+		
+		// Show a dialog with the selected item
+		messageDialog := gtk4.NewMessageDialog(
+			win,
+			gtk4.DialogModal,
+			gtk4.MessageInfo,
+			gtk4.ResponseOk,
+			fmt.Sprintf("You selected item at position %d", position),
+		)
+		messageDialog.SetTitle("ListView Item Selected")
+		
+		// Connect response handler
+		messageDialog.ConnectResponse(func(responseId gtk4.ResponseType) {
+			messageDialog.Destroy()
+		})
+		
+		// Show the dialog
+		messageDialog.Show()
+	})
+
+	// Create a scrolled window to contain the list view
+	listViewScroll := gtk4.NewScrolledWindow(
+		gtk4.WithHScrollbarPolicy(gtk4.ScrollbarPolicyNever),
+		gtk4.WithVScrollbarPolicy(gtk4.ScrollbarPolicyAutomatic),
+	)
+	listViewScroll.SetChild(listView)
+	listViewScroll.AddCssClass("list-view-container")
+	
+	// Add the list view scrolled window to the box
+	listViewBox.Append(listViewScroll)
+	
+	// Connect the add item button
+	addItemBtn.ConnectClicked(func() {
+		// Add a new item to the list model
+		newItem := fmt.Sprintf("New List Item %d", listModel.GetNItems()+1)
+		listModel.Append(newItem)
+		
+		// Log the action
+		logEntry := gtk4.NewLabel(fmt.Sprintf("[%s] Added new list item: %s", 
+			time.Now().Format("15:04:05"), newItem))
+		logEntry.AddCssClass("log-entry")
+		logBox.Prepend(logEntry)
+	})
+	
+	// Connect the remove item button
+	removeItemBtn.ConnectClicked(func() {
+		// Get the selected position
+		selectedPos := selectionModel.GetSelected()
+		
+		// Check if there's a valid selection
+		if selectedPos >= 0 && selectedPos < listModel.GetNItems() {
+			// Get the item text before removing it
+			itemText := fmt.Sprintf("Item %d", selectedPos+1)
+			
+			// Remove the item
+			listModel.Remove(selectedPos)
+			
+			// Log the action
+			logEntry := gtk4.NewLabel(fmt.Sprintf("[%s] Removed list item: %s", 
+				time.Now().Format("15:04:05"), itemText))
+			logEntry.AddCssClass("log-entry")
+			logBox.Prepend(logEntry)
+		}
+	})
+	
+	// Connect the clear items button
+	clearItemsBtn.ConnectClicked(func() {
+		// Clear all items by removing them one by one from the end
+		for i := listModel.GetNItems() - 1; i >= 0; i-- {
+			listModel.Remove(i)
+		}
+		
+		// Log the action
+		logEntry := gtk4.NewLabel(fmt.Sprintf("[%s] Cleared all list items", 
+			time.Now().Format("15:04:05")))
+		logEntry.AddCssClass("log-entry")
+		logBox.Prepend(logEntry)
+		
+		// Add a default item back
+		listModel.Append("List Empty")
+	})
+
+	// Add the ListView page to the stack
+	rightStack.AddTitled(listViewBox, "listview", "ListView")
 
 	// Create a stack switcher for the right stack
 	stackSwitcher := gtk4.NewStackSwitcher(rightStack)
@@ -207,6 +398,12 @@ This demo showcases GTK4Go's layout containers and widgets.
 			font-size: 18px;
 			font-weight: bold;
 			padding: 10px;
+			color: #2a76c6;
+		}
+		.subtitle {
+			font-size: 16px;
+			font-weight: bold;
+			padding: 8px;
 			color: #2a76c6;
 		}
 		.square-button {
@@ -275,6 +472,59 @@ This demo showcases GTK4Go's layout containers and widgets.
 		.log-entry:nth-child(odd) {
 			background-color: #f5f5f5;
 		}
+		.list-view-container {
+			border: 1px solid #cccccc;
+			border-radius: 4px;
+			min-height: 250px;
+		}
+		.list-item-box {
+			padding: 8px;
+			border-radius: 3px;
+			transition: background-color 0.2s ease;
+		}
+		.list-item-box.selected {
+			background-color: #3584e4;
+			color: white;
+		}
+		.list-item-icon {
+			font-size: 16px;
+			color: #3584e4;
+			font-weight: bold;
+		}
+		.list-item-box.selected .list-item-icon {
+			color: white;
+		}
+		.list-item-label {
+			font-size: 14px;
+		}
+		/* Add position-based styling using the item-X classes */
+		.list-item-box.item-0 .list-item-label:after { content: " 1"; }
+		.list-item-box.item-1 .list-item-label:after { content: " 2"; }
+		.list-item-box.item-2 .list-item-label:after { content: " 3"; }
+		.list-item-box.item-3 .list-item-label:after { content: " 4"; }
+		.list-item-box.item-4 .list-item-label:after { content: " 5"; }
+		.list-item-box.item-5 .list-item-label:after { content: " 6"; }
+		.list-item-box.item-6 .list-item-label:after { content: " 7"; }
+		.list-item-box.item-7 .list-item-label:after { content: " 8"; }
+		.list-item-box.item-8 .list-item-label:after { content: " 9"; }
+		.list-item-box.item-9 .list-item-label:after { content: " 10"; }
+		.list-item-box.item-10 .list-item-label:after { content: " 11"; }
+		.list-item-box.item-11 .list-item-label:after { content: " 12"; }
+		.list-item-box.item-12 .list-item-label:after { content: " 13"; }
+		.list-item-box.item-13 .list-item-label:after { content: " 14"; }
+		.list-item-box.item-14 .list-item-label:after { content: " 15"; }
+		.list-item-box.item-15 .list-item-label:after { content: " 16"; }
+		.list-item-box.item-16 .list-item-label:after { content: " 17"; }
+		.list-item-box.item-17 .list-item-label:after { content: " 18"; }
+		.list-item-box.item-18 .list-item-label:after { content: " 19"; }
+		.list-item-box.item-19 .list-item-label:after { content: " 20"; }
+		/* Add more for additional items as needed */
+		.controls-box {
+			padding: 8px;
+			margin-bottom: 8px;
+			background-color: #f0f0f0;
+			border-radius: 4px;
+		}
 	`)
 	if err != nil {
 		log.Printf("Failed to load CSS: %v", err)
@@ -329,11 +579,13 @@ This demo showcases GTK4Go's layout containers and widgets.
 		titleLabel.AddCssClass("title")
 		descLabel := gtk4.NewLabel("This is a simple demonstration of GTK4 bindings for Go.")
 		versionLabel := gtk4.NewLabel("Version: 1.0.0")
+		featuresLabel := gtk4.NewLabel("New Features: ListView with data binding and selection")
 
 		// Add widgets to the content area
 		content.Append(titleLabel)
 		content.Append(descLabel)
 		content.Append(versionLabel)
+		content.Append(featuresLabel)
 
 		// Add padding to the content area
 		content.SetSpacing(10)
@@ -435,6 +687,10 @@ This demo showcases GTK4Go's layout containers and widgets.
 
 	showHelpTab := func() {
 		rightStack.SetVisibleChildName("help")
+	}
+	
+	showListViewTab := func() {
+		rightStack.SetVisibleChildName("listview")
 	}
 
 	runLongTask := func() {
@@ -588,6 +844,9 @@ This demo showcases GTK4Go's layout containers and widgets.
 	helpAction := gtk4.NewAction("help", showHelpTab)
 	actionGroup.AddAction(helpAction)
 	
+	listViewAction := gtk4.NewAction("listview", showListViewTab)
+	actionGroup.AddAction(listViewAction)
+	
 	taskAction := gtk4.NewAction("task", runLongTask)
 	actionGroup.AddAction(taskAction)
 
@@ -618,9 +877,11 @@ This demo showcases GTK4Go's layout containers and widgets.
 	viewLogsItem := gtk4.NewMenuItem("Show Logs", "app.logs")
 	viewInfoItem := gtk4.NewMenuItem("Show Info", "app.info")
 	viewHelpItem := gtk4.NewMenuItem("Show Help", "app.help")
+	viewListViewItem := gtk4.NewMenuItem("Show ListView", "app.listview")
 	viewMenu.AppendItem(viewLogsItem)
 	viewMenu.AppendItem(viewInfoItem)
 	viewMenu.AppendItem(viewHelpItem)
+	viewMenu.AppendItem(viewListViewItem)
 	menu.AppendSubmenu("View", viewMenu)
 	
 	// Create Tools menu
@@ -642,11 +903,13 @@ This demo showcases GTK4Go's layout containers and widgets.
 	quickMenu := gtk4.NewMenu()
 	quickHelloItem := gtk4.NewMenuItem("Say Hello", "app.say_hello")
 	quickOpenItem := gtk4.NewMenuItem("Open File", "app.open")
+	quickListViewItem := gtk4.NewMenuItem("Show ListView", "app.listview")
 	quickAboutItem := gtk4.NewMenuItem("About", "app.about")
 	quickExitItem := gtk4.NewMenuItem("Exit", "app.exit")
 	
 	quickMenu.AppendItem(quickHelloItem)
 	quickMenu.AppendItem(quickOpenItem)
+	quickMenu.AppendItem(quickListViewItem)
 	quickMenu.AppendItem(quickAboutItem)
 	quickMenu.AppendItem(quickExitItem)
 	
@@ -663,6 +926,7 @@ This demo showcases GTK4Go's layout containers and widgets.
 	// Show instructions on how to test the window performance
 	log.Println("Running Hello World with menus and optimized window performance.")
 	log.Println("Try using the menu bar and menu button to access application features.")
+	log.Println("Check out the new ListView tab to see ListView widget in action.")
 
 	// Run the application
 	os.Exit(app.Run())

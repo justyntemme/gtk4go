@@ -155,6 +155,7 @@ type SelectionModel interface {
 type BaseSelectionModel struct {
 	BaseListModel
 	selectionModel *C.GtkSelectionModel
+	sourceModel    ListModel // The source model for this selection model
 }
 
 // GetSelectionModel returns the underlying GtkSelectionModel pointer
@@ -209,6 +210,15 @@ func (m *BaseSelectionModel) UnselectAll() {
 	C.selectionModelUnselectAll(m.selectionModel)
 }
 
+// GetItem returns the item at the given position by delegating to the source model
+func (m *BaseSelectionModel) GetItem(position int) interface{} {
+	if m.sourceModel != nil {
+		return m.sourceModel.GetItem(position)
+	}
+	// Fallback to the BaseListModel implementation if no source model
+	return m.BaseListModel.GetItem(position)
+}
+
 // ConnectSelectionChanged connects a callback for selection changes
 func (m *BaseSelectionModel) ConnectSelectionChanged(callback SelectionChangedCallback) {
 	if callback == nil {
@@ -236,17 +246,13 @@ func (m *BaseSelectionModel) Destroy() {
 
 	m.BaseListModel.Destroy()
 	m.selectionModel = nil
+	m.sourceModel = nil
 }
 
 // SingleSelection is a selection model that allows selecting a single item
 type SingleSelection struct {
 	BaseSelectionModel
 	singleSelection *C.GtkSingleSelection
-}
-
-// GetItem returns the item at the given position
-func (s *SingleSelection) GetItem(position int) interface{} {
-	return s.BaseListModel.GetItem(position)
 }
 
 // SingleSelectionOption is a function that configures a single selection
@@ -267,6 +273,7 @@ func NewSingleSelection(model ListModel, options ...SingleSelectionOption) *Sing
 				model: (*C.GListModel)(unsafe.Pointer(singleSelection)),
 			},
 			selectionModel: (*C.GtkSelectionModel)(unsafe.Pointer(singleSelection)),
+			sourceModel:    model,
 		},
 		singleSelection: singleSelection,
 	}
@@ -304,8 +311,10 @@ func WithInitialSelection(position int) SingleSelectionOption {
 func (s *SingleSelection) SetModel(model ListModel) {
 	if model != nil {
 		C.setSingleSelectionModel(s.singleSelection, model.GetListModel())
+		s.sourceModel = model
 	} else {
 		C.setSingleSelectionModel(s.singleSelection, nil)
+		s.sourceModel = nil
 	}
 }
 
@@ -335,6 +344,11 @@ func (s *SingleSelection) GetAutoselect() bool {
 	return C.getSingleSelectionAutoselect(s.singleSelection) != 0
 }
 
+// GetItem delegates to the source model to get an item at a specific position
+func (s *SingleSelection) GetItem(position int) interface{} {
+	return s.BaseSelectionModel.GetItem(position)
+}
+
 // Destroy frees resources associated with the single selection
 func (s *SingleSelection) Destroy() {
 	s.BaseSelectionModel.Destroy()
@@ -345,11 +359,6 @@ func (s *SingleSelection) Destroy() {
 type MultiSelection struct {
 	BaseSelectionModel
 	multiSelection *C.GtkMultiSelection
-}
-
-// GetItem returns the item at the given position
-func (s *MultiSelection) GetItem(position int) interface{} {
-	return s.BaseSelectionModel.GetItem(position)
 }
 
 // NewMultiSelection creates a new multi-selection model
@@ -367,6 +376,7 @@ func NewMultiSelection(model ListModel) *MultiSelection {
 				model: (*C.GListModel)(unsafe.Pointer(multiSelection)),
 			},
 			selectionModel: (*C.GtkSelectionModel)(unsafe.Pointer(multiSelection)),
+			sourceModel:    model,
 		},
 		multiSelection: multiSelection,
 	}
@@ -379,9 +389,16 @@ func NewMultiSelection(model ListModel) *MultiSelection {
 func (s *MultiSelection) SetModel(model ListModel) {
 	if model != nil {
 		C.setMultiSelectionModel(s.multiSelection, model.GetListModel())
+		s.sourceModel = model
 	} else {
 		C.setMultiSelectionModel(s.multiSelection, nil)
+		s.sourceModel = nil
 	}
+}
+
+// GetItem delegates to the source model to get an item at a specific position
+func (s *MultiSelection) GetItem(position int) interface{} {
+	return s.BaseSelectionModel.GetItem(position)
 }
 
 // Destroy frees resources associated with the multi selection
@@ -394,11 +411,6 @@ func (s *MultiSelection) Destroy() {
 type NoSelection struct {
 	BaseSelectionModel
 	noSelection *C.GtkNoSelection
-}
-
-// GetItem returns the item at the given position
-func (s *NoSelection) GetItem(position int) interface{} {
-	return s.BaseSelectionModel.GetItem(position)
 }
 
 // NewNoSelection creates a new no-selection model
@@ -416,6 +428,7 @@ func NewNoSelection(model ListModel) *NoSelection {
 				model: (*C.GListModel)(unsafe.Pointer(noSelection)),
 			},
 			selectionModel: (*C.GtkSelectionModel)(unsafe.Pointer(noSelection)),
+			sourceModel:    model,
 		},
 		noSelection: noSelection,
 	}
@@ -428,9 +441,16 @@ func NewNoSelection(model ListModel) *NoSelection {
 func (s *NoSelection) SetModel(model ListModel) {
 	if model != nil {
 		C.setNoSelectionModel(s.noSelection, model.GetListModel())
+		s.sourceModel = model
 	} else {
 		C.setNoSelectionModel(s.noSelection, nil)
+		s.sourceModel = nil
 	}
+}
+
+// GetItem delegates to the source model to get an item at a specific position
+func (s *NoSelection) GetItem(position int) interface{} {
+	return s.BaseSelectionModel.GetItem(position)
 }
 
 // Destroy frees resources associated with the no selection
