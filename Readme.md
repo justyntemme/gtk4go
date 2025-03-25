@@ -9,16 +9,19 @@ GTK4Go is designed as a thin wrapper around the GTK4 C API using cgo. The librar
 ### Core Components
 
 1. **Initialization System**
+
    - The main package (`gtk4go`) handles GTK4 initialization.
    - Automatic initialization occurs on import.
    - Manual initialization is also available via `Initialize()`.
 
 2. **Widget System**
+
    - Each GTK widget is represented by a Go struct in the `gtk4` package.
    - All widgets implement a common interface with methods like `GetWidget()` to access the underlying C pointers.
    - Memory management is handled through Go's finalizers to ensure proper resource cleanup.
 
 3. **Event Handling**
+
    - Signal connections are implemented using callback functions.
    - Callback management is done through handler maps with mutex protection.
    - The event loop is managed by GTK's application system.
@@ -75,38 +78,38 @@ func main() {
 	if err := gtk4go.Initialize(); err != nil {
 		log.Fatalf("Failed to initialize GTK: %v", err)
 	}
-	
+
 	// Create a new application
 	app := gtk4.NewApplication("com.example.HelloWorld")
-	
+
 	// Create a window
 	win := gtk4.NewWindow("Hello GTK4 from Go!")
 	win.SetDefaultSize(400, 300)
-	
+
 	// Create a vertical box container with 10px spacing
 	box := gtk4.NewBox(gtk4.OrientationVertical, 10)
-	
+
 	// Create a label with text
 	lbl := gtk4.NewLabel("Hello, World!")
-	
+
 	// Create a button with label
 	btn := gtk4.NewButton("Click Me")
-	
+
 	// Connect button click event
 	btn.ConnectClicked(func() {
 		fmt.Println("Button clicked!")
 	})
-	
+
 	// Add widgets to the box
 	box.Append(lbl)
 	box.Append(btn)
-	
+
 	// Add the box to the window
 	win.SetChild(box)
-	
+
 	// Add the window to the application
 	app.AddWindow(win)
-	
+
 	// Run the application
 	os.Exit(app.Run())
 }
@@ -116,52 +119,53 @@ func main() {
 
 ### Next Steps
 
-#### 1. ListView and TreeView Implementation
+#### 1. ListView and Implementation
 
-ListView and TreeView should be implemented next because:
+ListView and should be implemented next because:
+
 - They're essential for displaying collections of data
 - They're complex widgets that build upon previous implementations
 - They require model/view architecture that can be reused
 
 **Implementation Details:**
+
 1. Create base model interfaces:
+
    - ListModel for simple lists
-   - TreeModel for hierarchical data
 
 2. Implement view widgets:
    - ListView for flat lists of items
-   - TreeView for hierarchical data
    - Cell renderer system for customizing appearance
 
 **Implementation Considerations:**
+
 - Implement proper model/view separation
 - Consider memory management for large datasets
 - Implement selection handling and signals
 
 **Example API:**
+
 ```go
 // NewListView creates a new list view
 func NewListView(model ListModel) *ListView
 
-// NewTreeView creates a new tree view
-func NewTreeView(model TreeModel) *TreeView
 
-// AddColumn adds a column to a tree view
-func (t *TreeView) AddColumn(title string, renderer CellRenderer, column int)
 
 // GetSelection gets the selection model
-func (t *TreeView) GetSelection() *TreeSelection
 ```
 
 #### 2. Menu and Action System
 
 Menu and action system should be implemented next because:
+
 - They provide standardized command handling for applications
 - They integrate with modern UI paradigms (app menus, popover menus)
 - They build upon signal handling already implemented
 
 **Implementation Details:**
+
 1. Create action system:
+
    - ActionGroup for organizing actions
    - Action for individual commands
    - ActionMap for hierarchical organization
@@ -171,11 +175,13 @@ Menu and action system should be implemented next because:
    - MenuBar, PopoverMenu, and MenuButton widgets
 
 **Implementation Considerations:**
+
 - Implement GActions properly for modern GTK4 design
 - Consider application-wide vs. window-specific actions
 - Implement proper keyboard accelerators
 
 **Example API:**
+
 ```go
 // NewAction creates a new application action
 func NewAction(name string, callback func()) *Action
@@ -193,22 +199,26 @@ func (a *Application) SetMenuModel(model *MenuModel)
 #### 3. GtkBuilder and UI File Support
 
 GtkBuilder should be implemented next because:
+
 - It allows for UI definitions to be loaded from XML files
 - It enables visual design tools to be used with the library
 - It provides a more declarative approach to UI development
 
 **Implementation Details:**
+
 1. Create `gtk4/builder.go` with:
    - Builder implementation for loading UI files
    - Object mapping system to connect Go objects to UI elements
    - Signal connection system for UI-defined signals
 
 **Implementation Considerations:**
+
 - Implement proper type conversion between GTK and Go types
 - Consider how to expose object properties
 - Implement error handling for malformed UI files
 
 **Example API:**
+
 ```go
 // NewBuilder creates a new builder
 func NewBuilder() *Builder
@@ -231,18 +241,23 @@ func (b *Builder) ConnectSignals(handlers map[string]interface{}) error
 After implementing the core components, focus on advanced features and refinements:
 
 1. **Clipboard Support**
+
    - Implement clipboard operations (copy, paste, drag-and-drop)
 
 2. **File System Integration**
+
    - Implement file monitoring and operations
 
 3. **Application State and Settings**
+
    - Implement GSettings binding for persistent storage
 
 4. **Internationalization**
+
    - Add support for translation and locale-specific formatting
 
 5. **Accessibility Features**
+
    - Implement accessibility interfaces for screen readers
 
 6. **Testing and Documentation**
