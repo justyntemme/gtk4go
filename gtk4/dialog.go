@@ -26,7 +26,6 @@ package gtk4
 import "C"
 
 import (
-	"fmt"
 	"sync"
 	"unsafe"
 )
@@ -77,15 +76,7 @@ type DialogResponseCallback func(responseId ResponseType)
 var (
 	dialogCallbacks     = make(map[uintptr]DialogResponseCallback)
 	dialogCallbackMutex sync.RWMutex
-	debugLogging        = false // Set to true for debug logs
 )
-
-// Debug logging helper
-func debugLog(format string, args ...interface{}) {
-	if debugLogging {
-		fmt.Printf("[DEBUG] "+format+"\n", args...)
-	}
-}
 
 //export buttonResponseCallback
 func buttonResponseCallback(button *C.GtkButton, userData C.gpointer) {
@@ -96,7 +87,7 @@ func buttonResponseCallback(button *C.GtkButton, userData C.gpointer) {
 	// Get dialog pointer from button data
 	dialogPtr := uintptr(C.g_object_get_data((*C.GObject)(unsafe.Pointer(button)), C.CString("dialog-ptr")))
 
-	debugLog("Button clicked with response %d for dialog %v", responseId, dialogPtr)
+	DebugLog(DebugLevelVerbose, DebugComponentDialog, "Button clicked with response %d for dialog %v", responseId, dialogPtr)
 
 	// Look up callback
 	dialogCallbackMutex.RLock()
@@ -112,7 +103,7 @@ func buttonResponseCallback(button *C.GtkButton, userData C.gpointer) {
 //export windowCloseCallback
 func windowCloseCallback(window *C.GtkWindow, userData C.gpointer) C.gboolean {
 	windowPtr := uintptr(unsafe.Pointer(window))
-	debugLog("Window close request for %v", windowPtr)
+	DebugLog(DebugLevelVerbose, DebugComponentDialog, "Window close request for %v", windowPtr)
 
 	// Look up callback
 	dialogCallbackMutex.RLock()
@@ -237,12 +228,12 @@ func (d *Dialog) ConnectResponse(callback DialogResponseCallback) {
 	dialogPtr := uintptr(unsafe.Pointer(d.widget))
 	dialogCallbacks[dialogPtr] = callback
 
-	debugLog("Connected response callback to dialog %v", dialogPtr)
+	DebugLog(DebugLevelInfo, DebugComponentDialog, "Connected response callback to dialog %v", dialogPtr)
 }
 
 // Destroy overrides Window's Destroy to clean up dialog resources
 func (d *Dialog) Destroy() {
-	debugLog("Destroying dialog %v", uintptr(unsafe.Pointer(d.widget)))
+	DebugLog(DebugLevelInfo, DebugComponentDialog, "Destroying dialog %v", uintptr(unsafe.Pointer(d.widget)))
 
 	dialogCallbackMutex.Lock()
 	delete(dialogCallbacks, uintptr(unsafe.Pointer(d.widget)))
@@ -408,3 +399,4 @@ func (d *FileDialog) GetFilename() string {
 func (d *FileDialog) SetFilename(filename string) {
 	d.fileEntry.SetText(filename)
 }
+
