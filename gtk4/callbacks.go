@@ -39,6 +39,9 @@ import (
 	"unsafe"
 )
 
+// Import the main package for UI thread execution
+import gtk4go "../../gtk4go"
+
 // SignalType represents the type of GTK signal
 type SignalType string
 
@@ -94,11 +97,22 @@ type callbackData struct {
 // Global callback manager
 var globalCallbackManager = &CallbackManager{}
 
+// Debug flag - set to true to enable debug messages
+var debugCallbacks = false
+
+// debugPrint prints debug information if debugging is enabled
+func debugPrint(format string, args ...interface{}) {
+	if debugCallbacks {
+		fmt.Printf("[DEBUG] "+format+"\n", args...)
+	}
+}
+
 // Connect connects a signal to a callback function
 func Connect(object interface{}, signal SignalType, callback interface{}) (handlerID uint64) {
 	// Get the object's pointer
 	objectPtr := getObjectPointer(object)
 	if objectPtr == 0 {
+		debugPrint("Connect failed: couldn't get object pointer for %T", object)
 		return 0 // Invalid object
 	}
 
@@ -141,6 +155,8 @@ func Connect(object interface{}, signal SignalType, callback interface{}) (handl
 	// Associate this handler with the object for cleanup
 	globalCallbackManager.trackObjectHandler(objectPtr, handlerId)
 
+	debugPrint("Connected signal %s with ID %d to object %p", signal, id, objectPtr)
+	
 	return id
 }
 
@@ -149,6 +165,7 @@ func Disconnect(id uint64) {
 	// Look up the callback data
 	value, ok := globalCallbackManager.callbacks.Load(id)
 	if !ok {
+		debugPrint("Disconnect failed: callback ID %d not found", id)
 		return
 	}
 	
@@ -163,18 +180,22 @@ func Disconnect(id uint64) {
 	
 	// Remove the handler from the object's handler list
 	globalCallbackManager.untrackObjectHandler(data.objectPtr, data.handlerID)
+	
+	debugPrint("Disconnected signal handler ID %d from object %p", id, data.objectPtr)
 }
 
 // DisconnectAll disconnects all signal handlers for an object
 func DisconnectAll(object interface{}) {
 	objectPtr := getObjectPointer(object)
 	if objectPtr == 0 {
+		debugPrint("DisconnectAll failed: couldn't get object pointer for %T", object)
 		return
 	}
 	
 	// Get the object's handlers
 	value, ok := globalCallbackManager.objectHandlers.Load(objectPtr)
 	if !ok {
+		debugPrint("DisconnectAll: no handlers found for object %p", objectPtr)
 		return
 	}
 	
@@ -184,6 +205,7 @@ func DisconnectAll(object interface{}) {
 	cObject := (*C.GObject)(unsafe.Pointer(objectPtr))
 	for _, handlerId := range handlers {
 		C.disconnectSignal(cObject, handlerId)
+		debugPrint("DisconnectAll: disconnected handler ID %d from object %p", handlerId, objectPtr)
 	}
 	
 	// Remove the object from the map
@@ -194,6 +216,7 @@ func DisconnectAll(object interface{}) {
 		data := value.(*callbackData)
 		if data.objectPtr == objectPtr {
 			globalCallbackManager.callbacks.Delete(key)
+			debugPrint("DisconnectAll: removed callback ID %d from object %p", key, objectPtr)
 		}
 		return true
 	})
@@ -268,12 +291,15 @@ func (m *CallbackManager) trackObjectHandler(objectPtr uintptr, handlerId C.gulo
 	
 	handlers = append(handlers, handlerId)
 	m.objectHandlers.Store(objectPtr, handlers)
+	
+	debugPrint("Tracked handler ID %d for object %p", handlerId, objectPtr)
 }
 
 // untrackObjectHandler removes a handler ID from an object
 func (m *CallbackManager) untrackObjectHandler(objectPtr uintptr, handlerId C.gulong) {
 	value, ok := m.objectHandlers.Load(objectPtr)
 	if !ok {
+		debugPrint("untrackObjectHandler: no handlers found for object %p", objectPtr)
 		return
 	}
 	
@@ -292,8 +318,10 @@ func (m *CallbackManager) untrackObjectHandler(objectPtr uintptr, handlerId C.gu
 	if len(handlers) == 0 {
 		// No more handlers for this object
 		m.objectHandlers.Delete(objectPtr)
+		debugPrint("untrackObjectHandler: removed last handler for object %p", objectPtr)
 	} else {
 		m.objectHandlers.Store(objectPtr, handlers)
+		debugPrint("untrackObjectHandler: %d handlers remaining for object %p", len(handlers), objectPtr)
 	}
 }
 
@@ -305,6 +333,43 @@ func boolToGBoolean(b bool) C.gboolean {
 	return C.FALSE
 }
 
+// execCallback safely executes a callback on the main UI thread
+// to ensure thread safety with GTK
+func execCallback(callback interface{}, args ...interface{}) {
+	// Execute on UI thread to ensure GTK thread safety
+	gtk4go.RunOnUIThread(func() {
+		// Execute the callback based on its type
+		switch cb := callback.(type) {
+		case func():
+			cb()
+		case func(int):
+			if len(args) > 0 {
+				if i, ok := args[0].(int); ok {
+					cb(i)
+				}
+			}
+		case func(ResponseType):
+			if len(args) > 0 {
+				if rt, ok := args[0].(ResponseType); ok {
+					cb(rt)
+				}
+			}
+		case func() bool:
+			cb()
+		case func(int, int):
+			if len(args) > 1 {
+				if i1, ok1 := args[0].(int); ok1 {
+					if i2, ok2 := args[1].(int); ok2 {
+						cb(i1, i2)
+					}
+				}
+			}
+		default:
+			debugPrint("Unsupported callback type: %T", callback)
+		}
+	})
+}
+
 // Exported callback functions for CGo
 
 //export callbackHandler
@@ -312,14 +377,18 @@ func callbackHandler(object *C.GObject, data C.gpointer) {
 	id := uint64(uintptr(data))
 	value, ok := globalCallbackManager.callbacks.Load(id)
 	if !ok {
+		debugPrint("callbackHandler: callback ID %d not found", id)
 		return
 	}
 	
 	callbackData := value.(*callbackData)
+	debugPrint("callbackHandler: executing callback ID %d for signal %s", id, callbackData.signal)
 	
-	// Call the callback with no parameters
+	// Call the callback with no parameters on the UI thread
 	if callback, ok := callbackData.callback.(func()); ok {
-		callback()
+		execCallback(callback)
+	} else {
+		debugPrint("callbackHandler: callback has wrong type: %T", callbackData.callback)
 	}
 }
 
@@ -328,36 +397,42 @@ func callbackHandlerWithParam(object *C.GObject, param C.gpointer, data C.gpoint
 	id := uint64(uintptr(data))
 	value, ok := globalCallbackManager.callbacks.Load(id)
 	if !ok {
+		debugPrint("callbackHandlerWithParam: callback ID %d not found", id)
 		return
 	}
 	
 	callbackData := value.(*callbackData)
+	paramVal := int(uintptr(param))
+	debugPrint("callbackHandlerWithParam: executing callback ID %d for signal %s with param %v", 
+	           id, callbackData.signal, paramVal)
 	
 	// Handle different callback signatures based on the signal type
 	switch callbackData.signal {
 	case SignalResponse:
 		// For dialog responses, param is the response ID
 		if callback, ok := callbackData.callback.(func(ResponseType)); ok {
-			callback(ResponseType(uintptr(param)))
+			execCallback(callback, ResponseType(uintptr(param)))
 		}
 	case SignalListActivate:
 		// For list view activation, param is the position
 		if callback, ok := callbackData.callback.(func(int)); ok {
-			callback(int(uintptr(param)))
+			execCallback(callback, paramVal)
 		}
 	case SignalSelectionChanged:
 		// For selection changed, we have position and count
 		// Note: This is a simplification as we're only passing position
 		if callback, ok := callbackData.callback.(func(int)); ok {
-			callback(int(uintptr(param)))
+			execCallback(callback, paramVal)
 		} else if callback, ok := callbackData.callback.(func(int, int)); ok {
 			// In a real implementation, you'd extract both position and count
-			callback(int(uintptr(param)), 0)
+			execCallback(callback, paramVal, 0)
 		}
 	default:
 		// For other cases, try to call with an int parameter
 		if callback, ok := callbackData.callback.(func(int)); ok {
-			callback(int(uintptr(param)))
+			execCallback(callback, paramVal)
+		} else {
+			debugPrint("callbackHandlerWithParam: callback has wrong type: %T", callbackData.callback)
 		}
 	}
 }
@@ -367,17 +442,24 @@ func callbackHandlerWithReturn(object *C.GObject, data C.gpointer) C.gboolean {
 	id := uint64(uintptr(data))
 	value, ok := globalCallbackManager.callbacks.Load(id)
 	if !ok {
+		debugPrint("callbackHandlerWithReturn: callback ID %d not found", id)
 		return C.FALSE
 	}
 	
 	callbackData := value.(*callbackData)
+	debugPrint("callbackHandlerWithReturn: executing callback ID %d for signal %s", id, callbackData.signal)
 	
-	// Call the callback with no parameters and get boolean return
+	// Callbacks with return values need to be executed synchronously
+	// to get the return value back to C
 	if callback, ok := callbackData.callback.(func() bool); ok {
+		// Since we need the return value, we can't use execCallback here
+		// Ideally, this should still ensure we're on the UI thread
 		result := callback()
 		if result {
 			return C.TRUE
 		}
+	} else {
+		debugPrint("callbackHandlerWithReturn: callback has wrong type: %T", callbackData.callback)
 	}
 	
 	return C.FALSE
@@ -397,7 +479,12 @@ func init() {
 	})
 }
 
-// Helper: GetStats returns statistics about the callback system
+// EnableCallbackDebugging enables or disables debug output for callbacks
+func EnableCallbackDebugging(enable bool) {
+	debugCallbacks = enable
+}
+
+// GetCallbackStats returns statistics about the callback system
 func GetCallbackStats() map[string]int {
 	stats := make(map[string]int)
 	
