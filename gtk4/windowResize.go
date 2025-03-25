@@ -95,20 +95,21 @@ var (
 
 // windowResizeData tracks resize state for a window
 type windowResizeData struct {
-	isResizing      atomic.Bool
-	lastResizeTime  atomic.Value // time.Time
-	resizeStartTime atomic.Value // time.Time
-	width           int32
-	height          int32
-
-	// Function to call when resize starts
-	onResizeStart func()
-
-	// Function to call when resize ends
-	onResizeEnd func()
-
-	// Resize threshold to detect end of resize operation
-	resizeEndThreshold time.Duration
+	// Atomic fields for thread-safe access without mutex
+	isResizing      atomic.Bool     // Whether window is currently being resized
+	width           atomic.Int32    // Current window width
+	height          atomic.Int32    // Current window height
+	watcherID       atomic.Int64    // ID of the current resize watcher goroutine
+	
+	// Time values stored in atomic.Value
+	lastResizeTime  atomic.Value    // time.Time - Last time a resize event was detected
+	resizeStartTime atomic.Value    // time.Time - When resize operation began
+	
+	// Configuration fields (protected by mutex)
+	mu                 sync.RWMutex  // Mutex for non-atomic fields
+	onResizeStart      func()        // Function to call when resize starts
+	onResizeEnd        func()        // Function to call when resize ends
+	resizeEndThreshold time.Duration // Threshold to detect end of resize operation
 }
 
 // ResizeCallback is a function called when resize state changes
@@ -127,7 +128,6 @@ func windowPropertyNotifyCallback(object *C.GObject, pspec *C.GParamSpec, userDa
 	}
 
 	now := time.Now()
-	lastTime, _ := data.lastResizeTime.Load().(time.Time)
 	data.lastResizeTime.Store(now)
 
 	// Get current dimensions using C helper
@@ -139,14 +139,14 @@ func windowPropertyNotifyCallback(object *C.GObject, pspec *C.GParamSpec, userDa
 		return
 	}
 	
+	// Load old dimensions and store new dimensions atomically
+	oldWidth := data.width.Load()
+	oldHeight := data.height.Load()
 	newWidth := int32(width)
 	newHeight := int32(height)
-	oldWidth := atomic.LoadInt32(&data.width)
-	oldHeight := atomic.LoadInt32(&data.height)
-
-	// Store new dimensions
-	atomic.StoreInt32(&data.width, newWidth)
-	atomic.StoreInt32(&data.height, newHeight)
+	
+	data.width.Store(newWidth)
+	data.height.Store(newHeight)
 
 	// Check if dimensions actually changed
 	if newWidth == oldWidth && newHeight == oldHeight {
@@ -160,33 +160,77 @@ func windowPropertyNotifyCallback(object *C.GObject, pspec *C.GParamSpec, userDa
 		data.isResizing.Store(true)
 		data.resizeStartTime.Store(now)
 
-		// Call resize start handler if set
-		if data.onResizeStart != nil {
-			data.onResizeStart()
+		// Call resize start handler if set (thread-safe access)
+		data.mu.RLock()
+		onResizeStart := data.onResizeStart
+		data.mu.RUnlock()
+		
+		if onResizeStart != nil {
+			onResizeStart()
 		}
 	}
 
-	// Start a goroutine to detect when resize is done
-	// Only start a new one if this is a different resize operation
-	if !lastTime.IsZero() && now.Sub(lastTime) > 100*time.Millisecond {
-		go func() {
-			// Wait for a short period to see if resize continues
-			time.Sleep(data.resizeEndThreshold)
+	// Ensure a watcher goroutine is running
+	startResizeWatcher(data, windowPtr)
+}
 
-			// Check if no new resize events have occurred
-			lastResizeTime, _ := data.lastResizeTime.Load().(time.Time)
-			if time.Since(lastResizeTime) >= data.resizeEndThreshold {
-				// Resize has ended
-				if data.isResizing.Load() {
-					data.isResizing.Store(false)
+// startResizeWatcher ensures a single watcher goroutine is running to detect resize completion
+func startResizeWatcher(data *windowResizeData, windowPtr uintptr) {
+	// Generate a unique watcher ID
+	newWatcherID := time.Now().UnixNano()
+	
+	// Try to set the new watcher ID, and get the old one
+	oldWatcherID := data.watcherID.Swap(newWatcherID)
+	
+	// If oldWatcherID was 0, no watcher was running
+	if oldWatcherID == 0 {
+		go resizeWatcherGoroutine(data, windowPtr, newWatcherID)
+	}
+	// If oldWatcherID was non-zero, a watcher is already running
+	// It will detect it's been replaced when it checks its ID
+}
 
-					// Call resize end handler if set
-					if data.onResizeEnd != nil {
-						data.onResizeEnd()
-					}
-				}
+// resizeWatcherGoroutine monitors for resize completion
+func resizeWatcherGoroutine(data *windowResizeData, windowPtr uintptr, myID int64) {
+	// Get the threshold (thread-safe)
+	data.mu.RLock()
+	threshold := data.resizeEndThreshold
+	data.mu.RUnlock()
+	
+	// Wait for a short period to see if resize continues
+	time.Sleep(threshold)
+	
+	// Check if we're still the active watcher
+	if data.watcherID.Load() != myID {
+		return // Another watcher has taken over
+	}
+	
+	// Mark that no watcher is running
+	data.watcherID.Store(int64(0))
+	
+	// Check if no new resize events have occurred
+	lastResizeTime, ok := data.lastResizeTime.Load().(time.Time)
+	if !ok {
+		return // Type assertion failed
+	}
+	
+	if time.Since(lastResizeTime) >= threshold {
+		// Resize has ended, but only if we're still in resize state
+		if data.isResizing.Swap(false) { // returns old value and sets to false
+			// We were resizing and now we're not
+			
+			// Call resize end handler if set (thread-safe)
+			data.mu.RLock()
+			onResizeEnd := data.onResizeEnd
+			data.mu.RUnlock()
+			
+			if onResizeEnd != nil {
+				onResizeEnd()
 			}
-		}()
+		}
+	} else {
+		// Still getting resize events, start another watcher
+		startResizeWatcher(data, windowPtr)
 	}
 }
 
@@ -194,24 +238,29 @@ func windowPropertyNotifyCallback(object *C.GObject, pspec *C.GParamSpec, userDa
 func (w *Window) SetupResizeDetection(onResizeStart, onResizeEnd ResizeCallback) {
 	windowPtr := uintptr(unsafe.Pointer(w.widget))
 
-	// Create resize data
+	// Create resize data with thread-safe initialization
 	data := &windowResizeData{
-		onResizeStart:      onResizeStart,
-		onResizeEnd:        onResizeEnd,
 		resizeEndThreshold: 200 * time.Millisecond, // Default threshold
 	}
+
+	// Store callbacks with mutex protection
+	data.mu.Lock()
+	data.onResizeStart = onResizeStart
+	data.onResizeEnd = onResizeEnd
+	data.mu.Unlock()
 
 	// Initialize atomic values
 	data.lastResizeTime.Store(time.Time{})
 	data.resizeStartTime.Store(time.Time{})
+	data.watcherID.Store(int64(0))
 
 	// Get initial window size
 	var width, height C.int
 	C.getWindowSize((*C.GtkWindow)(unsafe.Pointer(w.widget)), &width, &height)
-	data.width = int32(width)
-	data.height = int32(height)
+	data.width.Store(int32(width))
+	data.height.Store(int32(height))
 
-	// Store in map
+	// Store in map with mutex protection
 	windowResizeStateMutex.Lock()
 	windowResizeState[windowPtr] = data
 	windowResizeStateMutex.Unlock()
@@ -258,6 +307,38 @@ func (w *Window) IsResizing() bool {
 	}
 
 	return data.isResizing.Load()
+}
+
+// GetSize returns the current window size
+func (w *Window) GetSize() (width, height int32) {
+	windowPtr := uintptr(unsafe.Pointer(w.widget))
+
+	windowResizeStateMutex.RLock()
+	data, exists := windowResizeState[windowPtr]
+	windowResizeStateMutex.RUnlock()
+
+	if !exists {
+		return 0, 0
+	}
+
+	return data.width.Load(), data.height.Load()
+}
+
+// SetResizeEndThreshold sets the time threshold for detecting the end of a resize operation
+func (w *Window) SetResizeEndThreshold(threshold time.Duration) {
+	windowPtr := uintptr(unsafe.Pointer(w.widget))
+
+	windowResizeStateMutex.RLock()
+	data, exists := windowResizeState[windowPtr]
+	windowResizeStateMutex.RUnlock()
+
+	if !exists {
+		return
+	}
+
+	data.mu.Lock()
+	data.resizeEndThreshold = threshold
+	data.mu.Unlock()
 }
 
 // CleanupResizeDetection cleans up resize detection for a window
