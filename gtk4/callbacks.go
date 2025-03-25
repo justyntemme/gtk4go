@@ -227,7 +227,8 @@ func getObjectPointer(object interface{}) uintptr {
 			if nativeMethod.IsValid() {
 				results := nativeMethod.Call(nil)
 				if len(results) == 1 && results[0].Kind() == reflect.Uintptr {
-					return results[0].Uint()
+					// Convert uint64 to uintptr safely, even on 32-bit systems
+					return uintptr(results[0].Interface().(uintptr))
 				}
 			}
 		}
