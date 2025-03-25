@@ -46,29 +46,48 @@ func main() {
 		gtk4.WithWideHandle(true),
 	)
 
-	// LEFT SIDE: Controls box
+	// ---- LEFT SIDE OF PANED ----
 	leftBox := gtk4.NewBox(gtk4.OrientationVertical, 10)
 
-	// Create UI controls for left side
-	entry := gtk4.NewEntry(gtk4.WithPlaceholderText("Enter your name"))
+	// Input section
+	inputLabel := gtk4.NewLabel("Enter your name:")
+	entry := gtk4.NewEntry()
+	entry.SetPlaceholderText("Type your name here")
 	resultLbl := gtk4.NewLabel("Hello, World!")
+
+	// Now use a Grid for button layout
+	buttonsGrid := gtk4.NewGrid(
+		gtk4.WithRowSpacing(10),
+		gtk4.WithColumnSpacing(10),
+		gtk4.WithColumnHomogeneous(true),
+	)
+
+	// Create buttons
 	helloBtn := gtk4.NewButton("Say Hello")
 	aboutBtn := gtk4.NewButton("About")
 	fileBtn := gtk4.NewButton("Open File")
 	longTaskBtn := gtk4.NewButton("Run Long Task")
-	progressLbl := gtk4.NewLabel("")
+
+	// Add buttons to grid (col, row, width, height)
+	buttonsGrid.Attach(helloBtn, 0, 0, 1, 1)
+	buttonsGrid.Attach(aboutBtn, 1, 0, 1, 1)
+	buttonsGrid.Attach(fileBtn, 0, 1, 1, 1)
+	buttonsGrid.Attach(longTaskBtn, 1, 1, 1, 1)
+
+	// Progress label
+	progressLbl := gtk4.NewLabel("Ready")
 	progressLbl.AddCssClass("progress-label")
 
-	// Add controls to the left box
+	// Add widgets to left box
+	leftBox.Append(inputLabel)
 	leftBox.Append(entry)
+	leftBox.Append(buttonsGrid)
 	leftBox.Append(resultLbl)
-	leftBox.Append(helloBtn)
-	leftBox.Append(aboutBtn)
-	leftBox.Append(fileBtn)
-	leftBox.Append(longTaskBtn)
 	leftBox.Append(progressLbl)
 
-	// RIGHT SIDE: Create a Stack for different content pages
+	// ---- RIGHT SIDE OF PANED ----
+
+	// Create a Stack for different content pages
 	rightStack := gtk4.NewStack(
 		gtk4.WithTransitionType(gtk4.StackTransitionTypeSlideLeftRight),
 		gtk4.WithTransitionDuration(200),
@@ -91,14 +110,13 @@ func main() {
 	infoGrid.Attach(gtk4.NewLabel("Description"), 1, 0, 1, 1)
 
 	// Add widget information rows
-	widgets := []string{"Grid", "Paned", "Stack", "StackSwitcher", "ListView", "ColumnView"}
+	widgets := []string{"Grid", "Paned", "Stack", "StackSwitcher", "ScrolledWindow"}
 	descriptions := []string{
 		"Arranges widgets in rows and columns",
 		"Divides space between two widgets with adjustable separator",
 		"Shows one widget at a time with transitions",
 		"Provides buttons to switch between stack pages",
-		"Displays data in a flat list format",
-		"Displays data in a tabular format with columns",
+		"Provides scrolling for large content",
 	}
 
 	for i, widget := range widgets {
@@ -146,229 +164,12 @@ Using this application:
 3. Click "About" to learn about the app
 4. Click "Open File" to select a file
 5. Click "Run Long Task" to see a background task
-6. Try the ListView/ColumnView tabs to see modern list views
 
 This demo showcases GTK4Go's layout containers and widgets.
 	`)
 
 	helpBox.Append(helpText)
 	rightStack.AddTitled(helpBox, "help", "Help")
-
-	// Stack Page 4: ListView Demo
-	listViewBox := gtk4.NewBox(gtk4.OrientationVertical, 10)
-	listViewBox.Append(gtk4.NewLabel("ListView Demo"))
-
-	// Create a paned container to show two types of ListViews
-	listViewPaned := gtk4.NewPaned(gtk4.OrientationHorizontal,
-		gtk4.WithPosition(380),
-		gtk4.WithWideHandle(true),
-	)
-
-	// LEFT SIDE: Simple ListView
-	listBox := gtk4.NewBox(gtk4.OrientationVertical, 5)
-	listLabel := gtk4.NewLabel("Simple List View:")
-	listLabel.AddCssClass("list-header")
-	listBox.Append(listLabel)
-
-	// Create a scrolled window for the list view
-	listScrollWin := gtk4.NewScrolledWindow(
-		gtk4.WithHScrollbarPolicy(gtk4.ScrollbarPolicyAutomatic),
-		gtk4.WithVScrollbarPolicy(gtk4.ScrollbarPolicyAutomatic),
-	)
-
-	// Create a list store model for the list view
-	listStore := gtk4.NewListStore(gtk4.G_TYPE_OBJECT)
-
-	// Add data to list store
-	for i := 0; i < 10; i++ {
-		itemText := fmt.Sprintf("Item %d", i+1)
-		listStore.AppendString(itemText)
-	}
-
-	// Create a list item factory
-	itemFactory := gtk4.TextFactory()
-
-	// Create the list view with single selection mode
-	listView := gtk4.NewListView(listStore,
-		gtk4.WithFactory(itemFactory),
-		gtk4.WithSelectionMode(gtk4.SelectionModeSingle),
-		gtk4.WithShowSeparators(true),
-		gtk4.WithSingleClickActivate(true),
-	)
-
-	// Create a status label for selection feedback
-	listStatusLabel := gtk4.NewLabel("No selection")
-	listStatusLabel.AddCssClass("status-label")
-
-	// Connect selection changed handler
-	listView.ConnectSelectionChanged(func(position int, nItems int) {
-		// Get the selected item
-		item := listView.GetSelectedItem()
-		if item != nil {
-			statusText := fmt.Sprintf("Selected: %v", item)
-			listStatusLabel.SetText(statusText)
-
-			// Add to log
-			logEntry := gtk4.NewLabel(fmt.Sprintf("[%s] %s",
-				time.Now().Format("15:04:05"), statusText))
-			logEntry.AddCssClass("log-entry")
-			logBox.Prepend(logEntry)
-		} else {
-			listStatusLabel.SetText("No selection")
-		}
-	})
-
-	// Connect item activated handler
-	listView.ConnectItemActivated(func(position int) {
-		// Get the item at this position
-		item := listStore.GetItem(position)
-		statusText := fmt.Sprintf("Activated: %v", item)
-
-		// Add to log
-		logEntry := gtk4.NewLabel(fmt.Sprintf("[%s] %s",
-			time.Now().Format("15:04:05"), statusText))
-		logEntry.AddCssClass("log-entry")
-		logBox.Prepend(logEntry)
-	})
-
-	// Add list view to scrolled window
-	listScrollWin.SetChild(listView)
-
-	// Create button toolbar for list actions
-	listButtons := gtk4.NewBox(gtk4.OrientationHorizontal, 5)
-
-	addButton := gtk4.NewButton("Add Item")
-	addButton.ConnectClicked(func() {
-		// Add a new item to the model
-		count := listStore.GetNItems()
-		newItemText := fmt.Sprintf("New Item %d", count+1)
-		listStore.AppendString(newItemText)
-
-		// Add log entry
-		logEntry := gtk4.NewLabel(fmt.Sprintf("[%s] Added new item: %s",
-			time.Now().Format("15:04:05"), newItemText))
-		logEntry.AddCssClass("log-entry")
-		logBox.Prepend(logEntry)
-	})
-
-	listButtons.Append(addButton)
-
-	// Add list view components to the list box
-	listBox.Append(listScrollWin)
-	listBox.Append(listStatusLabel)
-	listBox.Append(listButtons)
-
-	// RIGHT SIDE: ColumnView
-	columnBox := gtk4.NewBox(gtk4.OrientationVertical, 5)
-	columnLabel := gtk4.NewLabel("Column View:")
-	columnLabel.AddCssClass("column-header")
-	columnBox.Append(columnLabel)
-
-	// Create a scrolled window for the column view
-	columnScrollWin := gtk4.NewScrolledWindow(
-		gtk4.WithHScrollbarPolicy(gtk4.ScrollbarPolicyAutomatic),
-		gtk4.WithVScrollbarPolicy(gtk4.ScrollbarPolicyAutomatic),
-	)
-
-	// Create a list store for the column view data
-	// We'll use a simple list store for this example
-	type DataItem struct {
-		Name     string
-		Value    int
-		Active   bool
-		Progress float64
-	}
-
-	// Create a list store
-	dataStore := gtk4.NewListStore(gtk4.G_TYPE_OBJECT)
-
-	// Add some data
-	items := []DataItem{
-		{"Item 1", 10, true, 0.1},
-		{"Item 2", 20, false, 0.2},
-		{"Item 3", 30, true, 0.3},
-		{"Item 4", 40, false, 0.4},
-		{"Item 5", 50, true, 0.5},
-		{"Item 6", 60, false, 0.6},
-		{"Item 7", 70, true, 0.7},
-		{"Item 8", 80, false, 0.8},
-		{"Item 9", 90, true, 0.9},
-		{"Item 10", 100, false, 1.0},
-	}
-
-	// Add data to store
-	// Note: In a real application, we'd need to convert these to GObjects
-	// For this example, we'll just pretend they're there
-	for _, item := range items {
-		dataStore.AppendString(item.Name) // Simplified - just adding the name
-	}
-
-	// Create the column view
-	columnView := gtk4.NewColumnView(dataStore,
-		gtk4.WithColumnSelectionMode(gtk4.SelectionModeSingle),
-		gtk4.WithShowRowSeparators(true),
-		gtk4.WithShowColumnSeparators(true),
-		gtk4.WithReorderable(true),
-	)
-
-	// Create columns for the column view
-	// Note: These factories need customization to extract actual values from data model
-	// For now, we'll just demonstrate the structure
-	nameColumn := gtk4.TextColumn("Name", 0,
-		gtk4.WithResizable(true),
-		gtk4.WithExpand(true),
-	)
-
-	valueColumn := gtk4.TextColumn("Value", 1,
-		gtk4.WithResizable(true),
-		gtk4.WithFixedWidth(100),
-	)
-
-	activeColumn := gtk4.CheckboxColumn("Active", 2,
-		gtk4.WithResizable(true),
-		gtk4.WithFixedWidth(80),
-	)
-
-	progressColumn := gtk4.ProgressColumn("Progress", 3,
-		gtk4.WithResizable(true),
-		gtk4.WithFixedWidth(120),
-	)
-
-	// Add columns to the column view
-	columnView.AppendColumn(nameColumn)
-	columnView.AppendColumn(valueColumn)
-	columnView.AppendColumn(activeColumn)
-	columnView.AppendColumn(progressColumn)
-
-	// Create a status label for selection feedback
-	columnStatusLabel := gtk4.NewLabel("No selection")
-	columnStatusLabel.AddCssClass("status-label")
-
-	// Connect selection changed and activate signals
-	columnView.ConnectActivate(func(position int) {
-		// Add to log
-		logEntry := gtk4.NewLabel(fmt.Sprintf("[%s] Activated row %d",
-			time.Now().Format("15:04:05"), position))
-		logEntry.AddCssClass("log-entry")
-		logBox.Prepend(logEntry)
-	})
-
-	// Add column view to scrolled window
-	columnScrollWin.SetChild(columnView)
-
-	// Add column view components to the column box
-	columnBox.Append(columnScrollWin)
-	columnBox.Append(columnStatusLabel)
-
-	// Add list and column views to paned container
-	listViewPaned.SetStartChild(listBox)
-	listViewPaned.SetEndChild(columnBox)
-
-	// Add paned container to the list view box
-	listViewBox.Append(listViewPaned)
-
-	// Add ListView tab to right stack
-	rightStack.AddTitled(listViewBox, "listview", "ListView")
 
 	// Create a stack switcher for the right stack
 	stackSwitcher := gtk4.NewStackSwitcher(rightStack)
@@ -464,17 +265,6 @@ This demo showcases GTK4Go's layout containers and widgets.
 		}
 		.log-entry:nth-child(odd) {
 			background-color: #f5f5f5;
-		}
-		.list-header, .column-header {
-			font-weight: bold;
-			color: #333333;
-			margin-top: 5px;
-		}
-		.status-label {
-			font-style: italic;
-			color: #666666;
-			padding: 5px;
-			border-top: 1px solid #e0e0e0;
 		}
 	`)
 	if err != nil {
