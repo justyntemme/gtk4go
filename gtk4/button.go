@@ -1,71 +1,14 @@
 // Package gtk4 provides button functionality for GTK4
-// File: gtk4go/gtk4/button.go
 package gtk4
 
 // #cgo pkg-config: gtk4
 // #include <gtk/gtk.h>
 // #include <stdlib.h>
-//
-// // Signal callback function for button clicks
-// extern void buttonClickedCallback(GtkButton *button, gpointer user_data);
-//
-// // Connect button click signal with callback
-// static gulong connectButtonClicked(GtkWidget *button, gpointer user_data) {
-//     return g_signal_connect(G_OBJECT(button), "clicked", G_CALLBACK(buttonClickedCallback), user_data);
-// }
 import "C"
 
 import (
-	"sync"
 	"unsafe"
 )
-
-// ButtonClickedCallback represents a callback for button clicked events
-type ButtonClickedCallback func()
-
-// Thread-safe callback registry using RWMutex for efficient locking
-type buttonCallbackRegistry struct {
-	sync.RWMutex
-	callbacks map[uintptr]ButtonClickedCallback
-}
-
-// Global button callback registry
-var buttonRegistry = &buttonCallbackRegistry{
-	callbacks: make(map[uintptr]ButtonClickedCallback),
-}
-
-// set adds or updates a callback in the registry
-func (r *buttonCallbackRegistry) set(key uintptr, callback ButtonClickedCallback) {
-	r.Lock()
-	defer r.Unlock()
-	r.callbacks[key] = callback
-}
-
-// get retrieves a callback by key
-func (r *buttonCallbackRegistry) get(key uintptr) (ButtonClickedCallback, bool) {
-	r.RLock()
-	defer r.RUnlock()
-	callback, ok := r.callbacks[key]
-	return callback, ok
-}
-
-// delete removes a callback from the registry
-func (r *buttonCallbackRegistry) delete(key uintptr) {
-	r.Lock()
-	defer r.Unlock()
-	delete(r.callbacks, key)
-}
-
-//export buttonClickedCallback
-func buttonClickedCallback(button *C.GtkButton, userData C.gpointer) {
-	// Convert button pointer to uintptr for lookup
-	buttonPtr := uintptr(unsafe.Pointer(button))
-
-	// Get callback - use read-only lock for better performance
-	if callback, ok := buttonRegistry.get(buttonPtr); ok {
-		callback()
-	}
-}
 
 // ButtonOption is a function that configures a button
 type ButtonOption func(*Button)
@@ -117,32 +60,76 @@ func (b *Button) SetLabel(label string) {
 // GetLabel gets the button's label
 func (b *Button) GetLabel() string {
 	cLabel := C.gtk_button_get_label((*C.GtkButton)(unsafe.Pointer(b.widget)))
+	if cLabel == nil {
+		return ""
+	}
 	return C.GoString(cLabel)
 }
 
 // ConnectClicked connects a callback function to the button's "clicked" signal
-func (b *Button) ConnectClicked(callback ButtonClickedCallback) {
-	// Store callback in registry
-	buttonPtr := uintptr(unsafe.Pointer(b.widget))
-	buttonRegistry.set(buttonPtr, callback)
-
-	// Connect signal
-	C.connectButtonClicked(b.widget, C.gpointer(unsafe.Pointer(b.widget)))
+func (b *Button) ConnectClicked(callback func()) {
+	// Use the new callback system from callbacks.go
+	Connect(b, SignalClicked, callback)
 }
 
-// DisconnectClicked disconnects the clicked signal handler
+// DisconnectClicked disconnects all clicked signal handlers
 func (b *Button) DisconnectClicked() {
-	// Remove callback from registry
-	buttonPtr := uintptr(unsafe.Pointer(b.widget))
-	buttonRegistry.delete(buttonPtr)
+	// Use the DisconnectAll function from the unified callback system
+	// for the specific signal
+	// TODO: If needed, we could add a method to the callback system to disconnect by signal
+	DisconnectAll(b)
 }
 
 // Destroy destroys the button and cleans up resources
 func (b *Button) Destroy() {
-	// Remove callback from registry
-	buttonPtr := uintptr(unsafe.Pointer(b.widget))
-	buttonRegistry.delete(buttonPtr)
+	// Disconnect all signals for this widget
+	DisconnectAll(b)
 
 	// Call base destroy method
 	b.BaseWidget.Destroy()
 }
+
+// SetIconName sets the icon for the button
+func (b *Button) SetIconName(iconName string) {
+	WithCString(iconName, func(cIconName *C.char) {
+		// Create a new image with the icon name
+		image := C.gtk_image_new_from_icon_name(cIconName)
+
+		// Set the image on the button
+		C.gtk_button_set_child((*C.GtkButton)(unsafe.Pointer(b.widget)), image)
+	})
+}
+
+// SetChild sets the child widget for the button (instead of a label)
+func (b *Button) SetChild(child Widget) {
+	C.gtk_button_set_child((*C.GtkButton)(unsafe.Pointer(b.widget)), child.GetWidget())
+}
+
+// GetChild gets the child widget of the button
+func (b *Button) GetChild() Widget {
+	widget := C.gtk_button_get_child((*C.GtkButton)(unsafe.Pointer(b.widget)))
+	if widget == nil {
+		return nil
+	}
+
+	// Create a BaseWidget wrapper for the child
+	// Note: In a real implementation, we would determine the widget type
+	return &BaseWidget{widget: widget}
+}
+
+// SetHasFrame sets whether the button has a visible frame
+func (b *Button) SetHasFrame(hasFrame bool) {
+	var cHasFrame C.gboolean
+	if hasFrame {
+		cHasFrame = C.TRUE
+	} else {
+		cHasFrame = C.FALSE
+	}
+	C.gtk_button_set_has_frame((*C.GtkButton)(unsafe.Pointer(b.widget)), cHasFrame)
+}
+
+// GetHasFrame gets whether the button has a visible frame
+func (b *Button) GetHasFrame() bool {
+	return C.gtk_button_get_has_frame((*C.GtkButton)(unsafe.Pointer(b.widget))) == C.TRUE
+}
+
