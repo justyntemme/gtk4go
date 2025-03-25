@@ -124,6 +124,24 @@ func (m *BaseListModel) GetNItems() int {
 	return int(C.listModelGetNItems(m.model))
 }
 
+// GetItem returns the item at the given position as a generic interface{}
+// Concrete implementations should override this method to return appropriate types
+func (m *BaseListModel) GetItem(position int) interface{} {
+	if position < 0 || position >= m.GetNItems() {
+		return nil
+	}
+	
+	// This is a generic implementation that returns the raw pointer
+	// Concrete implementations should override this to return appropriate types
+	item := C.listModelGetItem(m.model, C.guint(position))
+	if item == nil {
+		return nil
+	}
+	
+	defer C.g_object_unref(C.gpointer(item))
+	return uintptr(unsafe.Pointer(item))
+}
+
 // ConnectItemsChanged connects a callback for list model changes
 func (m *BaseListModel) ConnectItemsChanged(callback ListModelItemsChangedCallback) {
 	if callback == nil {
@@ -201,6 +219,7 @@ func (l *StringList) GetString(position int) string {
 }
 
 // GetItem returns the item at the given position as an interface{}
+// For StringList, this returns the string at the given position
 func (l *StringList) GetItem(position int) interface{} {
 	return l.GetString(position)
 }
