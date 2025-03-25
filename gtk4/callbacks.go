@@ -37,10 +37,11 @@ import (
 	"sync"
 	"sync/atomic"
 	"unsafe"
-)
 
-// Import the main package for UI thread execution
-import gtk4go "../../gtk4go"
+	// Import the main package for UI thread execution
+
+	gtk4go "../../gtk4go"
+)
 
 // SignalType represents the type of GTK signal
 type SignalType string
@@ -49,26 +50,26 @@ type SignalType string
 const (
 	// Button signals
 	SignalClicked SignalType = "clicked"
-	
+
 	// Entry signals
-	SignalChanged SignalType = "changed"
+	SignalChanged  SignalType = "changed"
 	SignalActivate SignalType = "activate"
-	
+
 	// Window signals
 	SignalCloseRequest SignalType = "close-request"
-	
+
 	// Dialog signals
 	SignalResponse SignalType = "response"
-	
+
 	// ListView signals
 	SignalListActivate SignalType = "activate"
-	
+
 	// SelectionModel signals
 	SignalSelectionChanged SignalType = "selection-changed"
-	
+
 	// Adjustment signals
 	SignalValueChanged SignalType = "value-changed"
-	
+
 	// Action signals
 	SignalActionActivate SignalType = "activate"
 )
@@ -79,19 +80,21 @@ var nextCallbackID atomic.Uint64
 // CallbackManager handles GTK signal callbacks
 type CallbackManager struct {
 	// Map from callback ID to callback data
-	callbacks     sync.Map
+	callbacks sync.Map
 	// Map from object pointer to list of handler IDs
 	objectHandlers sync.Map
+	// Map from object pointer to map of signal type to callback data
+	objectCallbacks sync.Map
 }
 
 // callbackData stores information about a callback
 type callbackData struct {
-	callback    interface{}
-	objectPtr   uintptr
-	signal      SignalType
-	hasParam    bool
-	hasReturn   bool
-	handlerID   C.gulong
+	callback  interface{}
+	objectPtr uintptr
+	signal    SignalType
+	hasParam  bool
+	hasReturn bool
+	handlerID C.gulong
 }
 
 // Global callback manager
@@ -99,12 +102,12 @@ var globalCallbackManager = &CallbackManager{}
 
 // EnableCallbackDebugging enables or disables debug output for callbacks
 func EnableCallbackDebugging(enable bool) {
-    if enable {
-        EnableDebugComponent(DebugComponentCallback)
-        SetDebugLevel(DebugLevelVerbose) // Set to verbose level for detailed callback info
-    } else {
-        DisableDebugComponent(DebugComponentCallback)
-    }
+	if enable {
+		EnableDebugComponent(DebugComponentCallback)
+		SetDebugLevel(DebugLevelVerbose) // Set to verbose level for detailed callback info
+	} else {
+		DisableDebugComponent(DebugComponentCallback)
+	}
 }
 
 // Connect connects a signal to a callback function
@@ -124,12 +127,12 @@ func Connect(object interface{}, signal SignalType, callback interface{}) (handl
 
 	// Create callback data
 	data := &callbackData{
-		callback:    callback,
-		objectPtr:   objectPtr,
-		signal:      signal,
-		hasParam:    hasParam,
-		hasReturn:   hasReturn,
-		handlerID:   0, // Will be set after connection
+		callback:  callback,
+		objectPtr: objectPtr,
+		signal:    signal,
+		hasParam:  hasParam,
+		hasReturn: hasReturn,
+		handlerID: 0, // Will be set after connection
 	}
 
 	// Connect the signal
@@ -145,7 +148,7 @@ func Connect(object interface{}, signal SignalType, callback interface{}) (handl
 		boolToGBoolean(hasReturn),
 		C.guint(id),
 	)
-	
+
 	// Store the handler ID in the callback data
 	data.handlerID = handlerId
 
@@ -155,8 +158,11 @@ func Connect(object interface{}, signal SignalType, callback interface{}) (handl
 	// Associate this handler with the object for cleanup
 	globalCallbackManager.trackObjectHandler(objectPtr, handlerId)
 
+	// Store callback by object and signal for direct lookups
+	globalCallbackManager.storeObjectCallback(objectPtr, signal, callback)
+
 	DebugLog(DebugLevelInfo, DebugComponentCallback, "Connected signal %s with ID %d to object %p", signal, id, objectPtr)
-	
+
 	return id
 }
 
@@ -168,19 +174,20 @@ func Disconnect(id uint64) {
 		DebugLog(DebugLevelWarning, DebugComponentCallback, "Disconnect failed: callback ID %d not found", id)
 		return
 	}
-	
+
 	data := value.(*callbackData)
-	
+
 	// Disconnect the signal
 	cObject := (*C.GObject)(unsafe.Pointer(data.objectPtr))
 	C.disconnectSignal(cObject, data.handlerID)
-	
-	// Remove the callback from the map
+
+	// Remove the callback from the maps
 	globalCallbackManager.callbacks.Delete(id)
-	
+	globalCallbackManager.removeObjectCallback(data.objectPtr, data.signal)
+
 	// Remove the handler from the object's handler list
 	globalCallbackManager.untrackObjectHandler(data.objectPtr, data.handlerID)
-	
+
 	DebugLog(DebugLevelInfo, DebugComponentCallback, "Disconnected signal handler ID %d from object %p", id, data.objectPtr)
 }
 
@@ -191,26 +198,27 @@ func DisconnectAll(object interface{}) {
 		DebugLog(DebugLevelWarning, DebugComponentCallback, "DisconnectAll failed: couldn't get object pointer for %T", object)
 		return
 	}
-	
+
 	// Get the object's handlers
 	value, ok := globalCallbackManager.objectHandlers.Load(objectPtr)
 	if !ok {
 		DebugLog(DebugLevelVerbose, DebugComponentCallback, "DisconnectAll: no handlers found for object %p", objectPtr)
 		return
 	}
-	
+
 	handlers := value.([]C.gulong)
-	
+
 	// Disconnect each handler
 	cObject := (*C.GObject)(unsafe.Pointer(objectPtr))
 	for _, handlerId := range handlers {
 		C.disconnectSignal(cObject, handlerId)
 		DebugLog(DebugLevelVerbose, DebugComponentCallback, "DisconnectAll: disconnected handler ID %d from object %p", handlerId, objectPtr)
 	}
-	
-	// Remove the object from the map
+
+	// Remove the object from the maps
 	globalCallbackManager.objectHandlers.Delete(objectPtr)
-	
+	globalCallbackManager.objectCallbacks.Delete(objectPtr)
+
 	// Remove all callbacks for this object from the callbacks map
 	globalCallbackManager.callbacks.Range(func(key, value interface{}) bool {
 		data := value.(*callbackData)
@@ -220,6 +228,54 @@ func DisconnectAll(object interface{}) {
 		}
 		return true
 	})
+}
+
+// GetCallback retrieves a callback for a specific object and signal
+func GetCallback(objectPtr uintptr, signal SignalType) interface{} {
+	objectCallbacksValue, ok := globalCallbackManager.objectCallbacks.Load(objectPtr)
+	if !ok {
+		return nil
+	}
+
+	objectCallbacks := objectCallbacksValue.(map[SignalType]interface{})
+	callback, ok := objectCallbacks[signal]
+	if !ok {
+		return nil
+	}
+
+	return callback
+}
+
+// storeObjectCallback stores a callback by object pointer and signal type
+func (m *CallbackManager) storeObjectCallback(objectPtr uintptr, signal SignalType, callback interface{}) {
+	objectCallbacksValue, ok := m.objectCallbacks.Load(objectPtr)
+	var objectCallbacks map[SignalType]interface{}
+
+	if !ok {
+		objectCallbacks = make(map[SignalType]interface{})
+	} else {
+		objectCallbacks = objectCallbacksValue.(map[SignalType]interface{})
+	}
+
+	objectCallbacks[signal] = callback
+	m.objectCallbacks.Store(objectPtr, objectCallbacks)
+}
+
+// removeObjectCallback removes a callback by object pointer and signal type
+func (m *CallbackManager) removeObjectCallback(objectPtr uintptr, signal SignalType) {
+	objectCallbacksValue, ok := m.objectCallbacks.Load(objectPtr)
+	if !ok {
+		return
+	}
+
+	objectCallbacks := objectCallbacksValue.(map[SignalType]interface{})
+	delete(objectCallbacks, signal)
+
+	if len(objectCallbacks) == 0 {
+		m.objectCallbacks.Delete(objectPtr)
+	} else {
+		m.objectCallbacks.Store(objectPtr, objectCallbacks)
+	}
 }
 
 // getObjectPointer returns the pointer to the GObject of a GTK widget
@@ -244,7 +300,7 @@ func getObjectPointer(object interface{}) uintptr {
 					return uintptr(unsafe.Pointer(results[0].Pointer()))
 				}
 			}
-			
+
 			// Try Native method
 			nativeMethod := val.MethodByName("Native")
 			if nativeMethod.IsValid() {
@@ -256,7 +312,7 @@ func getObjectPointer(object interface{}) uintptr {
 			}
 		}
 	}
-	
+
 	return 0 // Unable to get pointer
 }
 
@@ -264,18 +320,18 @@ func getObjectPointer(object interface{}) uintptr {
 func analyzeCallbackSignature(callback interface{}) (hasParam bool, hasReturn bool) {
 	// Get the type of the callback
 	callbackType := reflect.TypeOf(callback)
-	
+
 	// Must be a function
 	if callbackType.Kind() != reflect.Func {
 		return false, false
 	}
-	
+
 	// Check if it has parameters
 	hasParam = callbackType.NumIn() > 0
-	
+
 	// Check if it has a return value
 	hasReturn = callbackType.NumOut() > 0
-	
+
 	return hasParam, hasReturn
 }
 
@@ -288,10 +344,10 @@ func (m *CallbackManager) trackObjectHandler(objectPtr uintptr, handlerId C.gulo
 	} else {
 		handlers = make([]C.gulong, 0, 4) // Pre-allocate space for 4 handlers
 	}
-	
+
 	handlers = append(handlers, handlerId)
 	m.objectHandlers.Store(objectPtr, handlers)
-	
+
 	DebugLog(DebugLevelVerbose, DebugComponentCallback, "Tracked handler ID %d for object %p", handlerId, objectPtr)
 }
 
@@ -302,9 +358,9 @@ func (m *CallbackManager) untrackObjectHandler(objectPtr uintptr, handlerId C.gu
 		DebugLog(DebugLevelVerbose, DebugComponentCallback, "untrackObjectHandler: no handlers found for object %p", objectPtr)
 		return
 	}
-	
+
 	handlers := value.([]C.gulong)
-	
+
 	// Find and remove the handler
 	for i, id := range handlers {
 		if id == handlerId {
@@ -314,7 +370,7 @@ func (m *CallbackManager) untrackObjectHandler(objectPtr uintptr, handlerId C.gu
 			break
 		}
 	}
-	
+
 	if len(handlers) == 0 {
 		// No more handlers for this object
 		m.objectHandlers.Delete(objectPtr)
@@ -380,10 +436,10 @@ func callbackHandler(object *C.GObject, data C.gpointer) {
 		DebugLog(DebugLevelWarning, DebugComponentCallback, "callbackHandler: callback ID %d not found", id)
 		return
 	}
-	
+
 	callbackData := value.(*callbackData)
 	DebugLog(DebugLevelVerbose, DebugComponentCallback, "callbackHandler: executing callback ID %d for signal %s", id, callbackData.signal)
-	
+
 	// Call the callback with no parameters on the UI thread
 	if callback, ok := callbackData.callback.(func()); ok {
 		execCallback(callback)
@@ -400,12 +456,12 @@ func callbackHandlerWithParam(object *C.GObject, param C.gpointer, data C.gpoint
 		DebugLog(DebugLevelWarning, DebugComponentCallback, "callbackHandlerWithParam: callback ID %d not found", id)
 		return
 	}
-	
+
 	callbackData := value.(*callbackData)
 	paramVal := int(uintptr(param))
-	DebugLog(DebugLevelVerbose, DebugComponentCallback, "callbackHandlerWithParam: executing callback ID %d for signal %s with param %v", 
-	           id, callbackData.signal, paramVal)
-	
+	DebugLog(DebugLevelVerbose, DebugComponentCallback, "callbackHandlerWithParam: executing callback ID %d for signal %s with param %v",
+		id, callbackData.signal, paramVal)
+
 	// Handle different callback signatures based on the signal type
 	switch callbackData.signal {
 	case SignalResponse:
@@ -413,11 +469,7 @@ func callbackHandlerWithParam(object *C.GObject, param C.gpointer, data C.gpoint
 		if callback, ok := callbackData.callback.(func(ResponseType)); ok {
 			execCallback(callback, ResponseType(uintptr(param)))
 		}
-	case SignalListActivate:
-		// For list view activation, param is the position
-		if callback, ok := callbackData.callback.(func(int)); ok {
-			execCallback(callback, paramVal)
-		}
+
 	case SignalSelectionChanged:
 		// For selection changed, we have position and count
 		// Note: This is a simplification as we're only passing position
@@ -426,6 +478,12 @@ func callbackHandlerWithParam(object *C.GObject, param C.gpointer, data C.gpoint
 		} else if callback, ok := callbackData.callback.(func(int, int)); ok {
 			// In a real implementation, you'd extract both position and count
 			execCallback(callback, paramVal, 0)
+		}
+	case SignalActionActivate:
+		// For action activation, handle the parameter
+		// In most cases we just want to call the callback without parameters
+		if callback, ok := callbackData.callback.(func()); ok {
+			execCallback(callback)
 		}
 	default:
 		// For other cases, try to call with an int parameter
@@ -448,10 +506,10 @@ func callbackHandlerWithReturn(object *C.GObject, data C.gpointer) C.gboolean {
 		DebugLog(DebugLevelWarning, DebugComponentCallback, "callbackHandlerWithReturn: callback ID %d not found", id)
 		return C.FALSE
 	}
-	
+
 	callbackData := value.(*callbackData)
 	DebugLog(DebugLevelVerbose, DebugComponentCallback, "callbackHandlerWithReturn: executing callback ID %d for signal %s", id, callbackData.signal)
-	
+
 	// Callbacks with return values need to be executed synchronously
 	// to get the return value back to C
 	if callback, ok := callbackData.callback.(func() bool); ok {
@@ -464,7 +522,7 @@ func callbackHandlerWithReturn(object *C.GObject, data C.gpointer) C.gboolean {
 	} else {
 		DebugLog(DebugLevelError, DebugComponentCallback, "callbackHandlerWithReturn: callback has wrong type: %T", callbackData.callback)
 	}
-	
+
 	return C.FALSE
 }
 
@@ -485,7 +543,7 @@ func init() {
 // GetCallbackStats returns statistics about the callback system
 func GetCallbackStats() map[string]int {
 	stats := make(map[string]int)
-	
+
 	// Count callbacks
 	callbackCount := 0
 	globalCallbackManager.callbacks.Range(func(_, _ interface{}) bool {
@@ -493,7 +551,7 @@ func GetCallbackStats() map[string]int {
 		return true
 	})
 	stats["TotalCallbacks"] = callbackCount
-	
+
 	// Count objects with handlers
 	objectCount := 0
 	globalCallbackManager.objectHandlers.Range(func(_, _ interface{}) bool {
@@ -501,7 +559,7 @@ func GetCallbackStats() map[string]int {
 		return true
 	})
 	stats["ObjectsWithCallbacks"] = objectCount
-	
+
 	// Count callback types by signal
 	signalCounts := make(map[SignalType]int)
 	globalCallbackManager.callbacks.Range(func(_, value interface{}) bool {
@@ -509,10 +567,11 @@ func GetCallbackStats() map[string]int {
 		signalCounts[data.signal]++
 		return true
 	})
-	
+
 	for signal, count := range signalCounts {
 		stats[fmt.Sprintf("Signal_%s", signal)] = count
 	}
-	
+
 	return stats
 }
+
