@@ -6,14 +6,6 @@ package gtk4
 // #include <gtk/gtk.h>
 // #include <stdlib.h>
 //
-// // ListView callbacks
-// extern void listViewActivateCallback(GtkListView *list_view, guint position, gpointer user_data);
-//
-// // Connect signals for list view
-// static gulong connectListViewActivate(GtkListView *list_view, gpointer user_data) {
-//     return g_signal_connect(list_view, "activate", G_CALLBACK(listViewActivateCallback), user_data);
-// }
-//
 // // ListView operations
 // static GtkWidget* createListView(GtkSelectionModel *model, GtkListItemFactory *factory) {
 //     return gtk_list_view_new(model, factory);
@@ -61,31 +53,11 @@ package gtk4
 import "C"
 
 import (
-	"sync"
 	"unsafe"
 )
 
 // ListViewActivateCallback represents a callback for list view item activation
 type ListViewActivateCallback func(position int)
-
-var (
-	listViewCallbacks     = make(map[uintptr]ListViewActivateCallback)
-	listViewCallbackMutex sync.RWMutex
-)
-
-//export listViewActivateCallback
-func listViewActivateCallback(listView *C.GtkListView, position C.guint, userData C.gpointer) {
-	listViewCallbackMutex.RLock()
-	defer listViewCallbackMutex.RUnlock()
-
-	// Convert list view pointer to uintptr for lookup
-	listViewPtr := uintptr(unsafe.Pointer(listView))
-
-	// Find and call the callback
-	if callback, ok := listViewCallbacks[listViewPtr]; ok {
-		callback(int(position))
-	}
-}
 
 // ListViewOption is a function that configures a list view
 type ListViewOption func(*ListView)
@@ -246,26 +218,13 @@ func (lv *ListView) GetEnableRubberband() bool {
 
 // ConnectActivate connects a callback for item activation
 func (lv *ListView) ConnectActivate(callback ListViewActivateCallback) {
-	if callback == nil {
-		return
-	}
-
-	listViewCallbackMutex.Lock()
-	defer listViewCallbackMutex.Unlock()
-
-	// Store the callback in the map
-	listViewPtr := uintptr(unsafe.Pointer(lv.widget))
-	listViewCallbacks[listViewPtr] = callback
-
-	// Connect the signal
-	C.connectListViewActivate((*C.GtkListView)(unsafe.Pointer(lv.widget)), C.gpointer(unsafe.Pointer(lv.widget)))
+	Connect(lv, SignalListActivate, callback)
 }
 
 // Destroy overrides BaseWidget's Destroy to clean up list view resources
 func (lv *ListView) Destroy() {
-	listViewCallbackMutex.Lock()
-	delete(listViewCallbacks, uintptr(unsafe.Pointer(lv.widget)))
-	listViewCallbackMutex.Unlock()
-
+	// Clean up callbacks using the unified system
+	DisconnectAll(lv)
+	
 	lv.BaseWidget.Destroy()
 }
