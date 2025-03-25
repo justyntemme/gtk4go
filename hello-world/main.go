@@ -35,6 +35,10 @@ func main() {
 	// Create a vertical box container as the main layout
 	mainBox := gtk4.NewBox(gtk4.OrientationVertical, 10)
 
+	// Create a menu bar for the application
+	menuBar := gtk4.NewMenuBar()
+	mainBox.Append(menuBar)
+
 	// Create a title label
 	titleLabel := gtk4.NewLabel("GTK4Go Demo Application")
 	titleLabel.AddCssClass("title")
@@ -48,6 +52,11 @@ func main() {
 
 	// ---- LEFT SIDE OF PANED ----
 	leftBox := gtk4.NewBox(gtk4.OrientationVertical, 10)
+
+	// Add a menu button with popup menu
+	menuButton := gtk4.NewMenuButton()
+	menuButton.SetLabel("Quick Actions")
+	leftBox.Append(menuButton)
 
 	// Input section
 	inputLabel := gtk4.NewLabel("Enter your name:")
@@ -274,19 +283,8 @@ This demo showcases GTK4Go's layout containers and widgets.
 		gtk4.AddProviderForDisplay(cssProvider, 600)
 	}
 
-	// Set up event handlers
-
-	// Connect entry activate event (when Enter is pressed)
-	entry.ConnectActivate(func() {
-		name := entry.GetText()
-		if name == "" {
-			name = "World"
-		}
-		resultLbl.SetText(fmt.Sprintf("Hello, %s!", name))
-	})
-
-	// Connect hello button click event
-	helloBtn.ConnectClicked(func() {
+	// Define functions for common operations to be shared between buttons and menu items
+	sayHello := func() {
 		name := entry.GetText()
 		if name == "" {
 			name = "World"
@@ -317,10 +315,9 @@ This demo showcases GTK4Go's layout containers and widgets.
 		dialog.Show()
 
 		resultLbl.SetText(fmt.Sprintf("Hello, %s!", name))
-	})
+	}
 
-	// Connect about button click event
-	aboutBtn.ConnectClicked(func() {
+	showAboutDialog := func() {
 		// Create a custom about dialog
 		dialog := gtk4.NewDialog("About This Application", win, gtk4.DialogModal|gtk4.DialogDestroyWithParent)
 
@@ -360,10 +357,9 @@ This demo showcases GTK4Go's layout containers and widgets.
 
 		// Show the dialog
 		dialog.Show()
-	})
+	}
 
-	// Connect file button click event
-	fileBtn.ConnectClicked(func() {
+	showOpenFileDialog := func() {
 		// Show a confirmation dialog
 		confirmDialog := gtk4.NewMessageDialog(
 			win,
@@ -416,13 +412,33 @@ This demo showcases GTK4Go's layout containers and widgets.
 
 		// Show the confirmation dialog
 		confirmDialog.Show()
-	})
+	}
 
-	// Connect long task button click event
-	var cancelFunc context.CancelFunc
+	clearInput := func() {
+		// Clear the entry field
+		entry.SetText("")
+		resultLbl.SetText("Hello, World!")
+		
+		// Add log entry for the action
+		logEntry := gtk4.NewLabel(fmt.Sprintf("[%s] Cleared input", time.Now().Format("15:04:05")))
+		logEntry.AddCssClass("log-entry")
+		logBox.Prepend(logEntry)
+	}
 
-	longTaskBtn.ConnectClicked(func() {
-		// Check if a task is already running
+	showInfoTab := func() {
+		rightStack.SetVisibleChildName("info")
+	}
+
+	showLogsTab := func() {
+		rightStack.SetVisibleChildName("logs")
+	}
+
+	showHelpTab := func() {
+		rightStack.SetVisibleChildName("help")
+	}
+
+	runLongTask := func() {
+		// Only implement if a task is not already running
 		if cancelFunc != nil {
 			// Cancel the current task
 			cancelFunc()
@@ -450,8 +466,6 @@ This demo showcases GTK4Go's layout containers and widgets.
 		cancelFunc = gtk4go.QueueBackgroundTask(
 			"long-task",
 			func(ctx context.Context, progress func(percent int, message string)) (interface{}, error) {
-				// This runs in a background goroutine
-
 				// Simulate a long task with 10 steps
 				for i := 0; i <= 100; i += 10 {
 					// Check for cancellation
@@ -482,8 +496,6 @@ This demo showcases GTK4Go's layout containers and widgets.
 				return "Task completed successfully!", nil
 			},
 			func(result interface{}, err error) {
-				// This runs on the UI thread when task is completed or fails
-
 				// Reset button
 				longTaskBtn.SetLabel("Run Long Task")
 				longTaskBtn.RemoveCssClass("disabled")
@@ -525,7 +537,122 @@ This demo showcases GTK4Go's layout containers and widgets.
 				progressLbl.SetText(fmt.Sprintf("%d%% - %s", percent, message))
 			},
 		)
+	}
+
+	exitApp := func() {
+		// Exit the application
+		os.Exit(0)
+	}
+
+	// Connect button click events to the functions
+	helloBtn.ConnectClicked(sayHello)
+	aboutBtn.ConnectClicked(showAboutDialog)
+	fileBtn.ConnectClicked(showOpenFileDialog)
+	longTaskBtn.ConnectClicked(runLongTask)
+
+	// Get the application's action group
+	actionGroup := app.GetActionGroup()
+
+	// Create actions for the menu items
+	sayHelloAction := gtk4.NewAction("say_hello", sayHello)
+	actionGroup.AddAction(sayHelloAction)
+
+	openAction := gtk4.NewAction("open", showOpenFileDialog)
+	actionGroup.AddAction(openAction)
+
+	saveAction := gtk4.NewAction("save", func() {
+		// Implement save functionality (placeholder)
+		fmt.Println("Save action triggered")
+		resultLbl.SetText("Save action triggered (not implemented)")
+		
+		// Add log entry for the action
+		logEntry := gtk4.NewLabel(fmt.Sprintf("[%s] Save action triggered (not implemented)", 
+			time.Now().Format("15:04:05")))
+		logEntry.AddCssClass("log-entry")
+		logBox.Prepend(logEntry)
 	})
+	actionGroup.AddAction(saveAction)
+
+	clearAction := gtk4.NewAction("clear", clearInput)
+	actionGroup.AddAction(clearAction)
+
+	aboutAction := gtk4.NewAction("about", showAboutDialog)
+	actionGroup.AddAction(aboutAction)
+
+	logsAction := gtk4.NewAction("logs", showLogsTab)
+	actionGroup.AddAction(logsAction)
+
+	infoAction := gtk4.NewAction("info", showInfoTab)
+	actionGroup.AddAction(infoAction)
+
+	helpAction := gtk4.NewAction("help", showHelpTab)
+	actionGroup.AddAction(helpAction)
+	
+	taskAction := gtk4.NewAction("task", runLongTask)
+	actionGroup.AddAction(taskAction)
+
+	exitAction := gtk4.NewAction("exit", exitApp)
+	actionGroup.AddAction(exitAction)
+
+	// Create application menu
+	menu := gtk4.NewMenu()
+
+	// Create File menu
+	fileMenu := gtk4.NewMenu()
+	fileOpenItem := gtk4.NewMenuItem("Open", "app.open")
+	fileSaveItem := gtk4.NewMenuItem("Save", "app.save")
+	fileExitItem := gtk4.NewMenuItem("Exit", "app.exit")
+	fileMenu.AppendItem(fileOpenItem)
+	fileMenu.AppendItem(fileSaveItem)
+	fileMenu.AppendItem(fileExitItem)
+	menu.AppendSubmenu("File", fileMenu)
+
+	// Create Edit menu
+	editMenu := gtk4.NewMenu()
+	editClearItem := gtk4.NewMenuItem("Clear", "app.clear")
+	editMenu.AppendItem(editClearItem)
+	menu.AppendSubmenu("Edit", editMenu)
+
+	// Create View menu
+	viewMenu := gtk4.NewMenu()
+	viewLogsItem := gtk4.NewMenuItem("Show Logs", "app.logs")
+	viewInfoItem := gtk4.NewMenuItem("Show Info", "app.info")
+	viewHelpItem := gtk4.NewMenuItem("Show Help", "app.help")
+	viewMenu.AppendItem(viewLogsItem)
+	viewMenu.AppendItem(viewInfoItem)
+	viewMenu.AppendItem(viewHelpItem)
+	menu.AppendSubmenu("View", viewMenu)
+	
+	// Create Tools menu
+	toolsMenu := gtk4.NewMenu()
+	toolsTaskItem := gtk4.NewMenuItem("Run Task", "app.task")
+	toolsMenu.AppendItem(toolsTaskItem)
+	menu.AppendSubmenu("Tools", toolsMenu)
+
+	// Create Help menu
+	helpMenu := gtk4.NewMenu()
+	helpAboutItem := gtk4.NewMenuItem("About", "app.about")
+	helpMenu.AppendItem(helpAboutItem)
+	menu.AppendSubmenu("Help", helpMenu)
+
+	// Set the menubar's menu model
+	menuBar.SetMenuModel(menu)
+
+	// Create a menu model for the menu button
+	quickMenu := gtk4.NewMenu()
+	quickHelloItem := gtk4.NewMenuItem("Say Hello", "app.say_hello")
+	quickOpenItem := gtk4.NewMenuItem("Open File", "app.open")
+	quickAboutItem := gtk4.NewMenuItem("About", "app.about")
+	quickExitItem := gtk4.NewMenuItem("Exit", "app.exit")
+	
+	quickMenu.AppendItem(quickHelloItem)
+	quickMenu.AppendItem(quickOpenItem)
+	quickMenu.AppendItem(quickAboutItem)
+	quickMenu.AppendItem(quickExitItem)
+	
+	// Create a popover menu for the menu button and connect it
+	popoverMenu := gtk4.NewPopoverMenu(quickMenu)
+	menuButton.SetPopover(popoverMenu)
 
 	// Add the main box to the window
 	win.SetChild(mainBox)
@@ -534,8 +661,8 @@ This demo showcases GTK4Go's layout containers and widgets.
 	app.AddWindow(win)
 
 	// Show instructions on how to test the window performance
-	log.Println("Running Hello World with optimized window performance.")
-	log.Println("Try resizing and moving the window to test the improvements.")
+	log.Println("Running Hello World with menus and optimized window performance.")
+	log.Println("Try using the menu bar and menu button to access application features.")
 
 	// Run the application
 	os.Exit(app.Run())
@@ -543,3 +670,6 @@ This demo showcases GTK4Go's layout containers and widgets.
 	// Clean up background workers at exit
 	gtk4go.DefaultWorker.Stop()
 }
+
+// Variable for long task cancellation
+var cancelFunc context.CancelFunc
