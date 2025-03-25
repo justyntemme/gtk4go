@@ -37,15 +37,24 @@ package gtk4
 // static void set_popover_parent(GtkPopover* popover, GtkWidget* parent) {
 //     gtk_widget_set_parent(GTK_WIDGET(popover), parent);
 // }
+//
+// // Signal constants for menus
+// static const char* SIGNAL_ACTIVATE = "activate";
+// static const char* SIGNAL_SELECTION_CHANGED = "selection-changed";
+// static const char* SIGNAL_DEACTIVATE = "deactivate";
 import "C"
 
 import (
 	"unsafe"
 )
 
+// MenuItemActivateCallback represents a callback for menu item activation
+type MenuItemActivateCallback func()
+
 // MenuItem represents a menu item
 type MenuItem struct {
 	item *C.GMenuItem
+	name string
 }
 
 // NewMenuItem creates a new menu item
@@ -60,12 +69,24 @@ func NewMenuItem(label, action string) *MenuItem {
 	
 	return &MenuItem{
 		item: item,
+		name: action,
 	}
 }
 
 // GetNative returns the underlying GMenuItem pointer
 func (mi *MenuItem) GetNative() *C.GMenuItem {
 	return mi.item
+}
+
+// GetName returns the action name of the menu item
+func (mi *MenuItem) GetName() string {
+	return mi.name
+}
+
+// ConnectActivate connects a callback for when the menu item is activated
+func (mi *MenuItem) ConnectActivate(callback MenuItemActivateCallback) uint64 {
+	// Use the unified callback system from callback.go
+	return Connect(mi, SignalType(C.GoString(C.SIGNAL_ACTIVATE)), callback)
 }
 
 // Menu represents a GTK menu
@@ -99,6 +120,11 @@ func (m *Menu) GetMenuModel() *C.GMenuModel {
 	return (*C.GMenuModel)(unsafe.Pointer(m.menu))
 }
 
+// GetNative returns the underlying GMenu pointer for callback registration
+func (m *Menu) GetNative() uintptr {
+	return uintptr(unsafe.Pointer(m.menu))
+}
+
 // MenuBar represents a GTK menu bar
 type MenuBar struct {
 	BaseWidget
@@ -122,6 +148,11 @@ func (mb *MenuBar) SetMenuModel(menu *Menu) {
 		(*C.GtkPopoverMenuBar)(unsafe.Pointer(mb.widget)),
 		menu.GetMenuModel(),
 	)
+}
+
+// ConnectSelectionChanged connects a callback for selection changes in the menu bar
+func (mb *MenuBar) ConnectSelectionChanged(callback func()) uint64 {
+	return Connect(mb, SignalType(C.GoString(C.SIGNAL_SELECTION_CHANGED)), callback)
 }
 
 // PopoverMenu represents a GTK popover menu
@@ -167,6 +198,20 @@ func (pm *PopoverMenu) Popdown() {
 	C.gtk_popover_popdown((*C.GtkPopover)(unsafe.Pointer(pm.widget)))
 }
 
+// ConnectDeactivate connects a callback for when the popover is closed
+func (pm *PopoverMenu) ConnectDeactivate(callback func()) uint64 {
+	return Connect(pm, SignalType(C.GoString(C.SIGNAL_DEACTIVATE)), callback)
+}
+
+// Destroy overrides BaseWidget's Destroy to clean up resources
+func (pm *PopoverMenu) Destroy() {
+	// Clean up all callbacks using the unified system
+	DisconnectAll(pm)
+	
+	// Call the base method
+	pm.BaseWidget.Destroy()
+}
+
 // MenuButton represents a GTK menu button
 type MenuButton struct {
 	BaseWidget
@@ -209,4 +254,13 @@ func (mb *MenuButton) SetPopover(popover *PopoverMenu) {
 		(*C.GtkMenuButton)(unsafe.Pointer(mb.widget)),
 		popover.widget,
 	)
+}
+
+// Destroy overrides BaseWidget's Destroy to clean up resources
+func (mb *MenuButton) Destroy() {
+	// Clean up all callbacks using the unified system
+	DisconnectAll(mb)
+	
+	// Call the base method
+	mb.BaseWidget.Destroy()
 }
