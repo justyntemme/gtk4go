@@ -26,7 +26,6 @@ package gtk4
 import "C"
 
 import (
-	"sync"
 	"unsafe"
 )
 
@@ -73,9 +72,9 @@ const (
 // DialogResponseCallback represents a callback for dialog response events
 type DialogResponseCallback func(responseId ResponseType)
 
-var (
-	dialogCallbacks     = make(map[uintptr]DialogResponseCallback)
-	dialogCallbackMutex sync.RWMutex
+// Custom signal type for dialog responses
+const (
+	SignalDialogResponse SignalType = "dialog-response"
 )
 
 //export buttonResponseCallback
@@ -89,14 +88,15 @@ func buttonResponseCallback(button *C.GtkButton, userData C.gpointer) {
 
 	DebugLog(DebugLevelVerbose, DebugComponentDialog, "Button clicked with response %d for dialog %v", responseId, dialogPtr)
 
-	// Look up callback
-	dialogCallbackMutex.RLock()
-	callback, exists := dialogCallbacks[dialogPtr]
-	dialogCallbackMutex.RUnlock()
-
-	if exists {
-		// Execute callback in main thread, not in a separate goroutine
-		callback(responseId)
+	// Lookup callback using the unified callback system
+	if callback := GetCallback(dialogPtr, SignalDialogResponse); callback != nil {
+		// Use the SafeCallback function to execute the callback
+		if typedCallback, ok := callback.(func(ResponseType)); ok {
+			SafeCallback(typedCallback, responseId)
+		} else {
+			DebugLog(DebugLevelError, DebugComponentDialog, 
+				"Invalid callback type for dialog response: %T, expected func(ResponseType)", callback)
+		}
 	}
 }
 
@@ -105,14 +105,15 @@ func windowCloseCallback(window *C.GtkWindow, userData C.gpointer) C.gboolean {
 	windowPtr := uintptr(unsafe.Pointer(window))
 	DebugLog(DebugLevelVerbose, DebugComponentDialog, "Window close request for %v", windowPtr)
 
-	// Look up callback
-	dialogCallbackMutex.RLock()
-	callback, exists := dialogCallbacks[windowPtr]
-	dialogCallbackMutex.RUnlock()
-
-	if exists {
-		// Execute callback in main thread
-		callback(ResponseDeleteEvent)
+	// Lookup callback using the unified callback system
+	if callback := GetCallback(windowPtr, SignalDialogResponse); callback != nil {
+		// Use the SafeCallback function to execute the callback
+		if typedCallback, ok := callback.(func(ResponseType)); ok {
+			SafeCallback(typedCallback, ResponseDeleteEvent)
+		} else {
+			DebugLog(DebugLevelError, DebugComponentDialog, 
+				"Invalid callback type for dialog response: %T, expected func(ResponseType)", callback)
+		}
 	}
 
 	// Return FALSE to allow the window to close
@@ -222,23 +223,54 @@ func (d *Dialog) GetContentArea() *Box {
 
 // ConnectResponse connects a response callback to the dialog
 func (d *Dialog) ConnectResponse(callback DialogResponseCallback) {
-	dialogCallbackMutex.Lock()
-	defer dialogCallbackMutex.Unlock()
+	// Convert DialogResponseCallback to a standard callback type
+	// that the unified callback system can handle
+	standardCallback := func(responseId ResponseType) {
+		callback(responseId)
+	}
 
+	// Store in the unified callback system
 	dialogPtr := uintptr(unsafe.Pointer(d.widget))
-	dialogCallbacks[dialogPtr] = callback
+	
+	// Use the store direct callback method to ensure it's stored correctly
+	StoreDirectCallback(dialogPtr, SignalDialogResponse, standardCallback)
 
-	DebugLog(DebugLevelInfo, DebugComponentDialog, "Connected response callback to dialog %v", dialogPtr)
+	DebugLog(DebugLevelInfo, DebugComponentDialog, 
+		"Connected response callback to dialog %v", dialogPtr)
+}
+
+// DisconnectResponse disconnects the response callback from the dialog
+func (d *Dialog) DisconnectResponse() {
+	// Get the dialog pointer
+	dialogPtr := uintptr(unsafe.Pointer(d.widget))
+	
+	// Remove callbacks for the dialog response signal
+	globalCallbackManager.objectCallbacks.Range(func(key, value interface{}) bool {
+		if key.(uintptr) == dialogPtr {
+			callbackMap := value.(map[SignalType]interface{})
+			delete(callbackMap, SignalDialogResponse)
+			
+			// If no more callbacks, remove the whole entry
+			if len(callbackMap) == 0 {
+				globalCallbackManager.objectCallbacks.Delete(key)
+			} else {
+				// Otherwise update with the modified map
+				globalCallbackManager.objectCallbacks.Store(key, callbackMap)
+			}
+		}
+		return true
+	})
 }
 
 // Destroy overrides Window's Destroy to clean up dialog resources
 func (d *Dialog) Destroy() {
-	DebugLog(DebugLevelInfo, DebugComponentDialog, "Destroying dialog %v", uintptr(unsafe.Pointer(d.widget)))
+	DebugLog(DebugLevelInfo, DebugComponentDialog, "Destroying dialog %v", 
+		uintptr(unsafe.Pointer(d.widget)))
 
-	dialogCallbackMutex.Lock()
-	delete(dialogCallbacks, uintptr(unsafe.Pointer(d.widget)))
-	dialogCallbackMutex.Unlock()
-
+	// Remove any callbacks associated with this dialog
+	d.DisconnectResponse()
+	
+	// Call the base Destroy to handle window cleanup
 	d.Window.Destroy()
 }
 
@@ -399,4 +431,3 @@ func (d *FileDialog) GetFilename() string {
 func (d *FileDialog) SetFilename(filename string) {
 	d.fileEntry.SetText(filename)
 }
-
