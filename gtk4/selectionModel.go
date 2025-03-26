@@ -93,29 +93,22 @@ import "C"
 
 import (
 	"runtime"
-	"sync"
 	"unsafe"
 )
 
 // SelectionChangedCallback represents a callback for selection changes
 type SelectionChangedCallback func(position, nItems int)
 
-var (
-	selectionCallbacks     = make(map[uintptr]SelectionChangedCallback)
-	selectionCallbackMutex sync.RWMutex
-)
-
 //export selectionChangedCallback
 func selectionChangedCallback(model *C.GtkSelectionModel, position, nItems C.guint, userData C.gpointer) {
-	selectionCallbackMutex.RLock()
-	defer selectionCallbackMutex.RUnlock()
-
-	// Convert model pointer to uintptr for lookup
+	// The userData pointer contains the model pointer itself
 	modelPtr := uintptr(unsafe.Pointer(model))
-
-	// Find and call the callback
-	if callback, ok := selectionCallbacks[modelPtr]; ok {
-		callback(int(position), int(nItems))
+	
+	// Use the UCS to find the callback
+	if callback := GetCallback(modelPtr, SignalSelectionChanged); callback != nil {
+		if cb, ok := callback.(func(int, int)); ok {
+			SafeCallback(cb, int(position), int(nItems))
+		}
 	}
 }
 
@@ -225,23 +218,38 @@ func (m *BaseSelectionModel) ConnectSelectionChanged(callback SelectionChangedCa
 		return
 	}
 
-	selectionCallbackMutex.Lock()
-	defer selectionCallbackMutex.Unlock()
+	// Create a function that matches the standard callback signature
+	stdCallback := func(position, nItems int) {
+		callback(position, nItems)
+	}
 
-	// Store the callback in the map
+	// Get the model pointer for registration
 	modelPtr := uintptr(unsafe.Pointer(m.selectionModel))
-	selectionCallbacks[modelPtr] = callback
 
-	// Connect the signal
-	C.connectSelectionChanged(m.selectionModel, C.gpointer(unsafe.Pointer(m.selectionModel)))
+	// Create a handler ID to track signal connection
+	handlerID := C.connectSelectionChanged(m.selectionModel, C.gpointer(unsafe.Pointer(m.selectionModel)))
+
+	// Store callback in the UCS
+	StoreCallback(modelPtr, SignalSelectionChanged, stdCallback, handlerID)
+}
+
+// StoreCallback is a helper function to store a callback in the UCS
+func StoreCallback(ptr uintptr, signal SignalType, callback interface{}, handlerID C.gulong) {
+	// Store the callback in the UCS
+	callbackMap := make(map[SignalType]interface{})
+	callbackMap[signal] = callback
+	globalCallbackManager.objectCallbacks.Store(ptr, callbackMap)
+
+	// Track handler ID for cleanup
+	handlers := []C.gulong{handlerID}
+	globalCallbackManager.objectHandlers.Store(ptr, handlers)
 }
 
 // Destroy frees resources associated with the selection model
 func (m *BaseSelectionModel) Destroy() {
 	if m.selectionModel != nil {
-		selectionCallbackMutex.Lock()
-		delete(selectionCallbacks, uintptr(unsafe.Pointer(m.selectionModel)))
-		selectionCallbackMutex.Unlock()
+		// Use the unified callback system's DisconnectAll function
+		DisconnectAll(m)
 	}
 
 	m.BaseListModel.Destroy()
