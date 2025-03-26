@@ -23,24 +23,19 @@ import "C"
 
 import (
 	"fmt"
-	"runtime"
 	"sync"
 	"sync/atomic"
-	"unsafe"
+
+	// Import the core uithread package
+	"./core/uithread"
 )
-
-// uiThreadID tracks the ID of the UI thread
-var uiThreadID int64
-
-// dispatchQueue is a channel for functions to be executed on the UI thread
-var dispatchQueue = make(chan func(), 100)
 
 // initialized tracks whether GTK has been initialized
 var (
 	initialized bool
 	initMutex   sync.Mutex
 	idleHandles sync.Map // Maps uint64 keys to idle handles
-	nextIdleKey uint64
+	nextIdleKey atomic.Uint64
 )
 
 // Initialize ensures GTK is initialized and starts the dispatch queue.
@@ -53,9 +48,6 @@ func Initialize() error {
 		return nil
 	}
 
-	// Store the UI thread ID
-	uiThreadID = threadID()
-
 	// Check if GTK is already initialized
 	if C.gtk_is_initialized() == C.FALSE {
 		// Initialize GTK
@@ -64,63 +56,30 @@ func Initialize() error {
 		}
 	}
 
-	// Start the dispatch queue processor
-	go processDispatchQueue()
+	// Register the GTK idle handler with the uithread package
+	uithread.RegisterIdleHandler = func(fn func()) {
+		// Get a unique key for this function
+		key := nextIdleKey.Add(1)
+
+		// Store the function in the idle handles map
+		idleHandles.Store(key, fn)
+
+		// Schedule the function to be executed on the UI thread
+		C.addIdleFunction(C.gpointer(uintptr(key)))
+	}
 
 	initialized = true
 	return nil
 }
 
+// RunOnUIThread schedules a function to be executed on the UI thread.
+func RunOnUIThread(fn func()) {
+	uithread.RunOnUIThread(fn)
+}
+
 // IsUIThread returns true if the current goroutine is running on the UI thread
 func IsUIThread() bool {
-	return threadID() == atomic.LoadInt64(&uiThreadID)
-}
-
-// RunOnUIThread schedules a function to be executed on the UI thread.
-// If called from the UI thread, the function is executed immediately.
-func RunOnUIThread(fn func()) {
-	if IsUIThread() {
-		fn()
-		return
-	}
-	dispatchQueue <- fn
-}
-
-// MustRunOnUIThread panics if not called from the UI thread
-func MustRunOnUIThread() {
-	if !IsUIThread() {
-		panic("This function must be called from the UI thread")
-	}
-}
-
-// threadID returns a unique identifier for the current OS thread
-func threadID() int64 {
-	var id int64
-	// This func will be executed on the current OS thread
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-	// Use the memory address of a local variable as a proxy for thread ID
-	id = int64(uintptr(unsafe.Pointer(&id)))
-	return id
-}
-
-// processDispatchQueue processes functions in the dispatch queue
-func processDispatchQueue() {
-	for fn := range dispatchQueue {
-		invokeOnUIThread(fn)
-	}
-}
-
-// invokeOnUIThread schedules a Go function to be executed on the UI thread
-func invokeOnUIThread(fn func()) {
-	// Get a unique key for this function
-	key := atomic.AddUint64(&nextIdleKey, 1)
-
-	// Store the function in the idle handles map
-	idleHandles.Store(key, fn)
-
-	// Schedule the function to be executed on the UI thread
-	C.addIdleFunction(C.gpointer(uintptr(key)))
+	return uithread.IsUIThread()
 }
 
 //export idleCallback
@@ -152,32 +111,10 @@ func Events() chan any {
 
 var (
 	events = make(chan any, 10)
-	mu     sync.Mutex
 )
-
-// SafeUIOperation executes a function safely on the UI thread
-// and returns when the operation is complete
-func SafeUIOperation(operation func()) {
-	if IsUIThread() {
-		operation()
-		return
-	}
-
-	// Use a channel to synchronize
-	done := make(chan struct{})
-
-	RunOnUIThread(func() {
-		operation()
-		close(done)
-	})
-
-	// Wait for the operation to complete
-	<-done
-}
 
 // init initializes the GTK4 library.
 func init() {
-	runtime.LockOSThread()
 	// Initialize GTK
 	Initialize()
 }
