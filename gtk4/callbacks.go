@@ -329,6 +329,8 @@ func getObjectPointer(object interface{}) uintptr {
 		return uintptr(unsafe.Pointer(obj.adjustment))
 	case *Action:
 		return uintptr(unsafe.Pointer(obj.action))
+	case *SignalListItemFactory:
+		return uintptr(unsafe.Pointer(obj.factory))
 	default:
 		// Try to find a GetWidget or Native method using reflection
 		val := reflect.ValueOf(object)
@@ -349,6 +351,15 @@ func getObjectPointer(object interface{}) uintptr {
 				if len(results) == 1 && results[0].Kind() == reflect.Uintptr {
 					// Convert uint64 to uintptr safely, even on 32-bit systems
 					return uintptr(results[0].Interface().(uintptr))
+				}
+			}
+
+			// Try GetListItemFactory method for ListItemFactory
+			getFactoryMethod := val.MethodByName("GetListItemFactory")
+			if getFactoryMethod.IsValid() {
+				results := getFactoryMethod.Call(nil)
+				if len(results) == 1 {
+					return uintptr(unsafe.Pointer(results[0].Pointer()))
 				}
 			}
 		}
@@ -461,6 +472,25 @@ func execCallback(callback interface{}, args ...interface{}) {
 					}
 				}
 			}
+		// Support for ListItemCallback and its equivalent function type
+		case ListItemCallback:
+			if len(args) > 0 {
+				if li, ok := args[0].(*ListItem); ok {
+					cb(li)
+				} else {
+					DebugLog(DebugLevelError, DebugComponentCallback, 
+						"ListItemCallback called with invalid argument type: %T, expected *ListItem", args[0])
+				}
+			}
+		case func(*ListItem):
+			if len(args) > 0 {
+				if li, ok := args[0].(*ListItem); ok {
+					cb(li)
+				} else {
+					DebugLog(DebugLevelError, DebugComponentCallback, 
+						"func(*ListItem) called with invalid argument type: %T, expected *ListItem", args[0])
+				}
+			}
 		default:
 			DebugLog(DebugLevelError, DebugComponentCallback, "Unsupported callback type: %T", callback)
 		}
@@ -502,6 +532,32 @@ func callbackHandlerWithParam(object *C.GObject, param C.gpointer, data C.gpoint
 	paramVal := int(uintptr(param))
 	DebugLog(DebugLevelVerbose, DebugComponentCallback, "callbackHandlerWithParam: executing callback ID %d for signal %s with param %v (source: %d)",
 		id, callbackData.signal, paramVal, callbackData.source)
+
+	// Check for ListItemCallback specifically
+	if _, isListItemCallback := callbackData.callback.(ListItemCallback); isListItemCallback {
+		DebugLog(DebugLevelInfo, DebugComponentCallback, 
+			"Found ListItemCallback, wrapping list item pointer %v", uintptr(param))
+			
+		// Create a ListItem wrapper for the GtkListItem pointer
+		listItem := &ListItem{listItem: (*C.GtkListItem)(unsafe.Pointer(param))}
+		
+		// Execute the callback with the ListItem
+		execCallback(callbackData.callback, listItem)
+		return
+	}
+	
+	// Similarly handle func(*ListItem) type
+	if _, isFuncListItem := callbackData.callback.(func(*ListItem)); isFuncListItem {
+		DebugLog(DebugLevelInfo, DebugComponentCallback, 
+			"Found func(*ListItem), wrapping list item pointer %v", uintptr(param))
+			
+		// Create a ListItem wrapper for the GtkListItem pointer
+		listItem := &ListItem{listItem: (*C.GtkListItem)(unsafe.Pointer(param))}
+		
+		// Execute the callback with the ListItem
+		execCallback(callbackData.callback, listItem)
+		return
+	}
 
 	// Handle different callback signatures based on the signal type and source
 	switch {
@@ -658,4 +714,33 @@ func GetCallbackStats() map[string]int {
 // SafeCallback safely executes a callback, ensuring it runs on the UI thread
 func SafeCallback(callback interface{}, args ...interface{}) {
 	execCallback(callback, args...)
+}
+
+// StoreCallback is a helper function to store a callback in the UCS
+func StoreCallback(ptr uintptr, signal SignalType, callback interface{}, handlerID C.gulong) {
+	// Store the callback in the UCS
+	callbackMap := make(map[SignalType]interface{})
+	callbackMap[signal] = callback
+	globalCallbackManager.objectCallbacks.Store(ptr, callbackMap)
+
+	// Track handler ID for cleanup
+	handlers := []C.gulong{handlerID}
+	globalCallbackManager.objectHandlers.Store(ptr, handlers)
+}
+
+// StoreDirectCallback is a helper function to directly store a callback for a pointer
+// This bypasses the normal Connect mechanism to ensure direct pointer matching
+func StoreDirectCallback(ptr uintptr, signal SignalType, callback interface{}) {
+	// Access the global callback manager's maps directly
+	globalCallbackManager.objectCallbacks.Store(ptr, map[SignalType]interface{}{
+		signal: callback,
+	})
+
+	DebugLog(DebugLevelInfo, DebugComponentCallback,
+		"Directly stored callback for pointer %v and signal %s", ptr, signal)
+}
+
+// RunOnUIThread runs a function on the UI thread
+func RunOnUIThread(fn func()) {
+	uithread.RunOnUIThread(fn)
 }

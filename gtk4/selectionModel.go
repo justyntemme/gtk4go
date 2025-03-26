@@ -103,7 +103,7 @@ type SelectionChangedCallback func(position, nItems int)
 func selectionChangedCallback(model *C.GtkSelectionModel, position, nItems C.guint, userData C.gpointer) {
 	// The userData pointer contains the model pointer itself
 	modelPtr := uintptr(unsafe.Pointer(model))
-	
+
 	// Use the UCS to find the callback
 	if callback := GetCallback(modelPtr, SignalSelectionChanged); callback != nil {
 		if cb, ok := callback.(func(int, int)); ok {
@@ -231,18 +231,6 @@ func (m *BaseSelectionModel) ConnectSelectionChanged(callback SelectionChangedCa
 
 	// Store callback in the UCS
 	StoreCallback(modelPtr, SignalSelectionChanged, stdCallback, handlerID)
-}
-
-// StoreCallback is a helper function to store a callback in the UCS
-func StoreCallback(ptr uintptr, signal SignalType, callback interface{}, handlerID C.gulong) {
-	// Store the callback in the UCS
-	callbackMap := make(map[SignalType]interface{})
-	callbackMap[signal] = callback
-	globalCallbackManager.objectCallbacks.Store(ptr, callbackMap)
-
-	// Track handler ID for cleanup
-	handlers := []C.gulong{handlerID}
-	globalCallbackManager.objectHandlers.Store(ptr, handlers)
 }
 
 // Destroy frees resources associated with the selection model
@@ -466,3 +454,4 @@ func (s *NoSelection) Destroy() {
 	s.BaseSelectionModel.Destroy()
 	s.noSelection = nil
 }
+

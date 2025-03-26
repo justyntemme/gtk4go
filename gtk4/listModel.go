@@ -31,11 +31,11 @@ package gtk4
 //     return g_list_model_get_n_items(G_LIST_MODEL(list));
 // }
 //
-// static const char* stringListGetString(GtkStringList *list, guint position) {
-//     const char* result = NULL;
+// static char* stringListGetString(GtkStringList *list, guint position) {
+//     char* result = NULL;
 //     GtkStringObject *obj = GTK_STRING_OBJECT(g_list_model_get_item(G_LIST_MODEL(list), position));
 //     if (obj != NULL) {
-//         result = gtk_string_object_get_string(obj);
+//         result = g_strdup(gtk_string_object_get_string(obj));
 //         g_object_unref(obj);
 //     }
 //     return result;
@@ -65,29 +65,34 @@ import "C"
 
 import (
 	"runtime"
-	"sync"
 	"unsafe"
+)
+
+// Define signal type for items-changed
+const (
+	SignalItemsChanged SignalType = "items-changed"
 )
 
 // ListModelItemsChangedCallback represents a callback for list model changes
 type ListModelItemsChangedCallback func(position, removed, added int)
 
-var (
-	listModelCallbacks     = make(map[uintptr]ListModelItemsChangedCallback)
-	listModelCallbackMutex sync.RWMutex
-)
-
 //export listModelItemsChangedCallback
 func listModelItemsChangedCallback(model *C.GListModel, position, removed, added C.guint, userData C.gpointer) {
-	listModelCallbackMutex.RLock()
-	defer listModelCallbackMutex.RUnlock()
-
-	// Convert model pointer to uintptr for lookup
+	// Get model pointer for lookup in the unified callback system
 	modelPtr := uintptr(unsafe.Pointer(model))
-
-	// Find and call the callback
-	if callback, ok := listModelCallbacks[modelPtr]; ok {
-		callback(int(position), int(removed), int(added))
+	
+	// Find callback using the unified callback system
+	if callback := GetCallback(modelPtr, SignalItemsChanged); callback != nil {
+		if typedCallback, ok := callback.(ListModelItemsChangedCallback); ok {
+			// Execute the callback with the parameters
+			SafeCallback(typedCallback, int(position), int(removed), int(added))
+		} else if typedCallback, ok := callback.(func(int, int, int)); ok {
+			// Alternative function signature
+			SafeCallback(typedCallback, int(position), int(removed), int(added))
+		} else {
+			DebugLog(DebugLevelError, DebugComponentCallback, 
+				"Invalid callback type for items-changed: %T", callback)
+		}
 	}
 }
 
@@ -148,24 +153,33 @@ func (m *BaseListModel) ConnectItemsChanged(callback ListModelItemsChangedCallba
 		return
 	}
 
-	listModelCallbackMutex.Lock()
-	defer listModelCallbackMutex.Unlock()
-
-	// Store the callback in the map
+	// Get the model pointer for registration
 	modelPtr := uintptr(unsafe.Pointer(m.model))
-	listModelCallbacks[modelPtr] = callback
+	
+	// Connect the signal in GTK and get the handler ID
+	handlerId := C.connectListModelItemsChanged(m.model, C.gpointer(unsafe.Pointer(m.model)))
+	
+	// Store the callback in the unified callback system
+	StoreCallback(modelPtr, SignalItemsChanged, callback, handlerId)
+}
 
-	// Connect the signal
-	C.connectListModelItemsChanged(m.model, C.gpointer(unsafe.Pointer(m.model)))
+// DisconnectItemsChanged disconnects the items-changed signal callback
+func (m *BaseListModel) DisconnectItemsChanged() {
+	modelPtr := uintptr(unsafe.Pointer(m.model))
+	callbackIDs := getCallbackIDsForSignal(modelPtr, SignalItemsChanged)
+	
+	// Disconnect each callback
+	for _, id := range callbackIDs {
+		Disconnect(id)
+	}
 }
 
 // Destroy frees resources associated with the list model
 func (m *BaseListModel) Destroy() {
 	if m.model != nil {
-		listModelCallbackMutex.Lock()
-		delete(listModelCallbacks, uintptr(unsafe.Pointer(m.model)))
-		listModelCallbackMutex.Unlock()
-
+		// Disconnect all signal handlers using the unified callback system
+		DisconnectAll(m)
+		
 		C.g_object_unref(C.gpointer(unsafe.Pointer(m.model)))
 		m.model = nil
 	}
@@ -211,15 +225,20 @@ func (l *StringList) GetString(position int) string {
 		return ""
 	}
 
+	// Use the fixed C function that properly handles memory
 	cStr := C.stringListGetString(l.stringList, C.guint(position))
 	if cStr == nil {
 		return ""
 	}
-	return C.GoString(cStr)
+	
+	// Convert to Go string and free the C string
+	str := C.GoString(cStr)
+	C.free(unsafe.Pointer(cStr))
+	return str
 }
 
-// GetItem returns the item at the given position as an interface{}
-// For StringList, this returns the string at the given position
+// GetItem returns the item at the given position as a string
+// Overrides BaseListModel.GetItem to return a string directly
 func (l *StringList) GetItem(position int) interface{} {
 	return l.GetString(position)
 }

@@ -51,6 +51,11 @@ package gtk4
 //     return gtk_list_view_get_enable_rubberband(list_view);
 // }
 //
+// // Connect activate signal for ListView
+// static gulong connectListViewActivate(GtkListView *list_view, guint (*callback)(int, void*), void *user_data) {
+//     return g_signal_connect(list_view, "activate", G_CALLBACK(callback), user_data);
+// }
+//
 // // New in GTK 4.12: Scroll to API
 // static void listViewScrollTo(GtkListView *list_view, guint position, GtkListScrollFlags flags) {
 //     #if GTK_CHECK_VERSION(4, 12, 0)
@@ -341,15 +346,27 @@ func (lv *ListView) ConnectActivate(callback ListViewActivateCallback) {
 
 	// To avoid type issues, convert the ListViewActivateCallback to a regular func(int)
 	// since that's what the callback handler expects
-	rawCallback := func(position int) {
+	standardCallback := func(position int) {
 		callback(position)
 	}
 
-	// Connect using the raw callback
-	Connect(lv, SignalListActivate, rawCallback)
+	// Connect using the unified callback system with the list-specific signal type
+	Connect(lv, SignalListActivate, standardCallback)
 
 	DebugLog(DebugLevelInfo, DebugComponentListView, 
 		"Connected activate callback to ListView %p", unsafe.Pointer(lv.widget))
+}
+
+// DisconnectActivate disconnects the activate signal handler
+func (lv *ListView) DisconnectActivate() {
+	// Get all callbacks for this ListView
+	viewPtr := uintptr(unsafe.Pointer(lv.widget))
+	callbackIDs := getCallbackIDsForSignal(viewPtr, SignalListActivate)
+	
+	// Disconnect each callback
+	for _, id := range callbackIDs {
+		Disconnect(id)
+	}
 }
 
 // Destroy overrides BaseWidget's Destroy to clean up list view resources

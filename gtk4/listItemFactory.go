@@ -36,94 +36,81 @@ import "C"
 
 import (
 	"runtime"
-	"sync"
 	"unsafe"
 )
 
 // ListItemCallback represents a callback for list item operations
 type ListItemCallback func(listItem *ListItem)
 
-// ListItemCallbackType defines the types of callbacks for list item factory
-type ListItemCallbackType int
-
+// Define signal types for list item factory - using GTK's actual signal names
 const (
-	// ListItemCallbackSetup is called when a new list item is created
-	ListItemCallbackSetup ListItemCallbackType = iota
-	// ListItemCallbackBind is called when a list item is bound to a model item
-	ListItemCallbackBind
-	// ListItemCallbackUnbind is called when a list item is unbound from a model item
-	ListItemCallbackUnbind
-	// ListItemCallbackTeardown is called when a list item is destroyed
-	ListItemCallbackTeardown
-)
-
-var (
-	// Map of factory pointers to maps of callback types to callbacks
-	factoryCallbacks     = make(map[uintptr]map[ListItemCallbackType]ListItemCallback)
-	factoryCallbackMutex sync.RWMutex
+	SignalSetup    SignalType = "setup"
+	SignalBind     SignalType = "bind"
+	SignalUnbind   SignalType = "unbind"
+	SignalTeardown SignalType = "teardown"
 )
 
 //export setupListItemCallback
 func setupListItemCallback(factory *C.GtkSignalListItemFactory, listItem *C.GtkListItem, userData C.gpointer) {
-	factoryCallbackMutex.RLock()
-	defer factoryCallbackMutex.RUnlock()
-
-	// Convert factory pointer to uintptr for lookup
+	// Get factory pointer for lookup in the unified callback system
 	factoryPtr := uintptr(unsafe.Pointer(factory))
-
-	// Find and call the callback
-	if callbacks, ok := factoryCallbacks[factoryPtr]; ok {
-		if callback, ok := callbacks[ListItemCallbackSetup]; ok {
-			callback(&ListItem{listItem: listItem})
-		}
+	
+	// Create a Go wrapper for the list item
+	goListItem := &ListItem{listItem: listItem}
+	
+	// Find callback using the unified callback system
+	if callback := GetCallback(factoryPtr, SignalSetup); callback != nil {
+		// The modified SafeCallback function in callbacks.go now handles ListItemCallback
+		SafeCallback(callback, goListItem)
 	}
 }
 
 //export bindListItemCallback
 func bindListItemCallback(factory *C.GtkSignalListItemFactory, listItem *C.GtkListItem, userData C.gpointer) {
-	factoryCallbackMutex.RLock()
-	defer factoryCallbackMutex.RUnlock()
-
-	// Convert factory pointer to uintptr for lookup
+	// Get factory pointer for lookup in the unified callback system
 	factoryPtr := uintptr(unsafe.Pointer(factory))
-
-	// Find and call the callback
-	if callbacks, ok := factoryCallbacks[factoryPtr]; ok {
-		if callback, ok := callbacks[ListItemCallbackBind]; ok {
-			callback(&ListItem{listItem: listItem})
-		}
+	
+	// Create a Go wrapper for the list item
+	goListItem := &ListItem{listItem: listItem}
+	
+	// Find callback using the unified callback system
+	if callback := GetCallback(factoryPtr, SignalBind); callback != nil {
+		// The modified SafeCallback function in callbacks.go now handles ListItemCallback
+		SafeCallback(callback, goListItem)
+	} else {
+		// If no callback is registered, try a default implementation
+		// that just sets the text on the child label
+		goListItem.UpdateChildWithText()
 	}
 }
 
 //export unbindListItemCallback
 func unbindListItemCallback(factory *C.GtkSignalListItemFactory, listItem *C.GtkListItem, userData C.gpointer) {
-	factoryCallbackMutex.RLock()
-	defer factoryCallbackMutex.RUnlock()
-
-	// Convert factory pointer to uintptr for lookup
+	// Get factory pointer for lookup in the unified callback system
 	factoryPtr := uintptr(unsafe.Pointer(factory))
-
-	// Find and call the callback
-	if callbacks, ok := factoryCallbacks[factoryPtr]; ok {
-		if callback, ok := callbacks[ListItemCallbackUnbind]; ok {
-			callback(&ListItem{listItem: listItem})
-		}
+	
+	// Create a Go wrapper for the list item
+	goListItem := &ListItem{listItem: listItem}
+	
+	// Find callback using the unified callback system
+	if callback := GetCallback(factoryPtr, SignalUnbind); callback != nil {
+		// The modified SafeCallback function in callbacks.go now handles ListItemCallback
+		SafeCallback(callback, goListItem)
 	}
 }
 
 //export teardownListItemCallback
 func teardownListItemCallback(factory *C.GtkSignalListItemFactory, listItem *C.GtkListItem, userData C.gpointer) {
-	factoryCallbackMutex.RLock()
-	defer factoryCallbackMutex.RUnlock()
-
-	// Convert factory pointer to uintptr for lookup
+	// Get factory pointer for lookup in the unified callback system
 	factoryPtr := uintptr(unsafe.Pointer(factory))
-
-	// Find and call the callback
-	if callbacks, ok := factoryCallbacks[factoryPtr]; ok {
-		if callback, ok := callbacks[ListItemCallbackTeardown]; ok {
-			callback(&ListItem{listItem: listItem})
-		}
+	
+	// Create a Go wrapper for the list item
+	goListItem := &ListItem{listItem: listItem}
+	
+	// Find callback using the unified callback system
+	if callback := GetCallback(factoryPtr, SignalTeardown); callback != nil {
+		// The modified SafeCallback function in callbacks.go now handles ListItemCallback
+		SafeCallback(callback, goListItem)
 	}
 }
 
@@ -147,11 +134,6 @@ func NewSignalListItemFactory() *SignalListItemFactory {
 		factory: C.createSignalListItemFactory(),
 	}
 
-	// Initialize the callback map for this factory
-	factoryCallbackMutex.Lock()
-	factoryCallbacks[uintptr(unsafe.Pointer(factory.factory))] = make(map[ListItemCallbackType]ListItemCallback)
-	factoryCallbackMutex.Unlock()
-
 	runtime.SetFinalizer(factory, (*SignalListItemFactory).Destroy)
 	return factory
 }
@@ -167,15 +149,8 @@ func (f *SignalListItemFactory) ConnectSetup(callback ListItemCallback) {
 		return
 	}
 
-	factoryCallbackMutex.Lock()
-	defer factoryCallbackMutex.Unlock()
-
-	// Store the callback in the map
-	factoryPtr := uintptr(unsafe.Pointer(f.factory))
-	factoryCallbacks[factoryPtr][ListItemCallbackSetup] = callback
-
-	// Connect the signal
-	C.connectSetupListItem(f.factory, C.gpointer(unsafe.Pointer(f.factory)))
+	// Use the standard Connect function with the correct GTK signal name
+	Connect(f, SignalSetup, callback)
 }
 
 // ConnectBind connects a callback for the bind signal
@@ -184,15 +159,8 @@ func (f *SignalListItemFactory) ConnectBind(callback ListItemCallback) {
 		return
 	}
 
-	factoryCallbackMutex.Lock()
-	defer factoryCallbackMutex.Unlock()
-
-	// Store the callback in the map
-	factoryPtr := uintptr(unsafe.Pointer(f.factory))
-	factoryCallbacks[factoryPtr][ListItemCallbackBind] = callback
-
-	// Connect the signal
-	C.connectBindListItem(f.factory, C.gpointer(unsafe.Pointer(f.factory)))
+	// Use the standard Connect function with the correct GTK signal name
+	Connect(f, SignalBind, callback)
 }
 
 // ConnectUnbind connects a callback for the unbind signal
@@ -201,15 +169,8 @@ func (f *SignalListItemFactory) ConnectUnbind(callback ListItemCallback) {
 		return
 	}
 
-	factoryCallbackMutex.Lock()
-	defer factoryCallbackMutex.Unlock()
-
-	// Store the callback in the map
-	factoryPtr := uintptr(unsafe.Pointer(f.factory))
-	factoryCallbacks[factoryPtr][ListItemCallbackUnbind] = callback
-
-	// Connect the signal
-	C.connectUnbindListItem(f.factory, C.gpointer(unsafe.Pointer(f.factory)))
+	// Use the standard Connect function with the correct GTK signal name
+	Connect(f, SignalUnbind, callback)
 }
 
 // ConnectTeardown connects a callback for the teardown signal
@@ -218,24 +179,60 @@ func (f *SignalListItemFactory) ConnectTeardown(callback ListItemCallback) {
 		return
 	}
 
-	factoryCallbackMutex.Lock()
-	defer factoryCallbackMutex.Unlock()
+	// Use the standard Connect function with the correct GTK signal name
+	Connect(f, SignalTeardown, callback)
+}
 
-	// Store the callback in the map
+// DisconnectSetup disconnects the setup signal callback
+func (f *SignalListItemFactory) DisconnectSetup() {
 	factoryPtr := uintptr(unsafe.Pointer(f.factory))
-	factoryCallbacks[factoryPtr][ListItemCallbackTeardown] = callback
+	callbackIDs := getCallbackIDsForSignal(factoryPtr, SignalSetup)
+	
+	// Disconnect each callback
+	for _, id := range callbackIDs {
+		Disconnect(id)
+	}
+}
 
-	// Connect the signal
-	C.connectTeardownListItem(f.factory, C.gpointer(unsafe.Pointer(f.factory)))
+// DisconnectBind disconnects the bind signal callback
+func (f *SignalListItemFactory) DisconnectBind() {
+	factoryPtr := uintptr(unsafe.Pointer(f.factory))
+	callbackIDs := getCallbackIDsForSignal(factoryPtr, SignalBind)
+	
+	// Disconnect each callback
+	for _, id := range callbackIDs {
+		Disconnect(id)
+	}
+}
+
+// DisconnectUnbind disconnects the unbind signal callback
+func (f *SignalListItemFactory) DisconnectUnbind() {
+	factoryPtr := uintptr(unsafe.Pointer(f.factory))
+	callbackIDs := getCallbackIDsForSignal(factoryPtr, SignalUnbind)
+	
+	// Disconnect each callback
+	for _, id := range callbackIDs {
+		Disconnect(id)
+	}
+}
+
+// DisconnectTeardown disconnects the teardown signal callback
+func (f *SignalListItemFactory) DisconnectTeardown() {
+	factoryPtr := uintptr(unsafe.Pointer(f.factory))
+	callbackIDs := getCallbackIDsForSignal(factoryPtr, SignalTeardown)
+	
+	// Disconnect each callback
+	for _, id := range callbackIDs {
+		Disconnect(id)
+	}
 }
 
 // Destroy frees resources associated with the factory
 func (f *SignalListItemFactory) Destroy() {
 	if f.factory != nil {
-		factoryCallbackMutex.Lock()
-		delete(factoryCallbacks, uintptr(unsafe.Pointer(f.factory)))
-		factoryCallbackMutex.Unlock()
-
+		// Disconnect all signal handlers using the unified callback system
+		DisconnectAll(f)
+		
 		C.g_object_unref(C.gpointer(unsafe.Pointer(f.factory)))
 		f.factory = nil
 	}
