@@ -12,7 +12,7 @@ import (
 
 func main() {
 	// Initialize GTK (this is also done automatically on import)
-	// 
+	// 
 
 	// Force software rendering to avoid OpenGL crashes
 	os.Setenv("GSK_RENDERER", "cairo")
@@ -190,7 +190,7 @@ This demo showcases GTK4Go's layout containers and widgets.
 	helpBox.Append(helpText)
 	rightStack.AddTitled(helpBox, "help", "Help")
 
-	// Stack Page 4: ListView Example (NEW)
+	// Stack Page 4: ListView Example (UPDATED)
 	listViewBox := gtk4.NewBox(gtk4.OrientationVertical, 10)
 	listViewTitle := gtk4.NewLabel("ListView Example")
 	listViewTitle.AddCssClass("subtitle")
@@ -233,7 +233,7 @@ This demo showcases GTK4Go's layout containers and widgets.
 	// Create a list item factory
 	factory := gtk4.NewSignalListItemFactory()
 
-	// Setup list items with setup callback
+	// Setup list items with setup callback - UPDATED
 	factory.ConnectSetup(func(listItem *gtk4.ListItem) {
 		// Create a box for layout
 		box := gtk4.NewBox(gtk4.OrientationHorizontal, 10)
@@ -245,9 +245,8 @@ This demo showcases GTK4Go's layout containers and widgets.
 		icon.AddCssClass("list-item-icon")
 		box.Append(icon)
 
-		// Create a label for the item text with initial text
-		// We'll use CSS to control the appearance based on position
-		label := gtk4.NewLabel("List Item")
+		// Create a label for the item text
+		label := gtk4.NewLabel("")
 		label.AddCssClass("list-item-label")
 		box.Append(label)
 
@@ -255,16 +254,19 @@ This demo showcases GTK4Go's layout containers and widgets.
 		listItem.SetChild(box)
 	})
 
-	// Bind data to list items with bind callback
+	// Bind data to list items with bind callback - UPDATED
 	factory.ConnectBind(func(listItem *gtk4.ListItem) {
+		// Get the text from the model
+		text := listItem.GetText()
+		if text == "" {
+			text = fmt.Sprintf("Item %d", listItem.GetPosition()+1)
+		}
+
+		// Set the text on the label inside the box
+		listItem.SetTextOnChildLabel(text)
+
 		// Get the box from the list item
 		boxWidget := listItem.GetChild()
-
-		// Get the position for reference
-		position := listItem.GetPosition()
-
-		// In a real implementation, we'd find the label inside the box and update its text
-		// For the demo, we'll modify both style classes to reflect selection state
 
 		// Add selected class if the item is selected
 		if listItem.GetSelected() {
@@ -272,10 +274,6 @@ This demo showcases GTK4Go's layout containers and widgets.
 		} else {
 			boxWidget.RemoveCssClass("selected")
 		}
-
-		// Since we can't easily update children, we'll set a CSS class with the position
-		// and use that in the CSS to show different styles for different items
-		boxWidget.AddCssClass(fmt.Sprintf("item-%d", position))
 	})
 
 	// Create list view with the selection model and factory
@@ -506,28 +504,6 @@ This demo showcases GTK4Go's layout containers and widgets.
 		.list-item-label {
 			font-size: 14px;
 		}
-		/* Add position-based styling using the item-X classes */
-		.list-item-box.item-0 .list-item-label:after { content: " 1"; }
-		.list-item-box.item-1 .list-item-label:after { content: " 2"; }
-		.list-item-box.item-2 .list-item-label:after { content: " 3"; }
-		.list-item-box.item-3 .list-item-label:after { content: " 4"; }
-		.list-item-box.item-4 .list-item-label:after { content: " 5"; }
-		.list-item-box.item-5 .list-item-label:after { content: " 6"; }
-		.list-item-box.item-6 .list-item-label:after { content: " 7"; }
-		.list-item-box.item-7 .list-item-label:after { content: " 8"; }
-		.list-item-box.item-8 .list-item-label:after { content: " 9"; }
-		.list-item-box.item-9 .list-item-label:after { content: " 10"; }
-		.list-item-box.item-10 .list-item-label:after { content: " 11"; }
-		.list-item-box.item-11 .list-item-label:after { content: " 12"; }
-		.list-item-box.item-12 .list-item-label:after { content: " 13"; }
-		.list-item-box.item-13 .list-item-label:after { content: " 14"; }
-		.list-item-box.item-14 .list-item-label:after { content: " 15"; }
-		.list-item-box.item-15 .list-item-label:after { content: " 16"; }
-		.list-item-box.item-16 .list-item-label:after { content: " 17"; }
-		.list-item-box.item-17 .list-item-label:after { content: " 18"; }
-		.list-item-box.item-18 .list-item-label:after { content: " 19"; }
-		.list-item-box.item-19 .list-item-label:after { content: " 20"; }
-		/* Add more for additional items as needed */
 		.controls-box {
 			padding: 8px;
 			margin-bottom: 8px;

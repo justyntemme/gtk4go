@@ -88,18 +88,6 @@ func NewAction(name string, callback ActionCallback) *Action {
 	return a
 }
 
-// StoreDirectCallback is a helper function to directly store a callback for a pointer
-// This bypasses the normal Connect mechanism to ensure direct pointer matching
-func StoreDirectCallback(ptr uintptr, signal SignalType, callback interface{}) {
-	// Access the global callback manager's maps directly
-	globalCallbackManager.objectCallbacks.Store(ptr, map[SignalType]interface{}{
-		signal: callback,
-	})
-
-	DebugLog(DebugLevelInfo, DebugComponentCallback,
-		"Directly stored callback for pointer %v and signal %s", ptr, signal)
-}
-
 // GetNative returns the underlying GAction pointer
 func (a *Action) GetNative() *C.GAction {
 	return (*C.GAction)(unsafe.Pointer(a.action))
@@ -278,4 +266,3 @@ func dumpActionCallbacks() {
 	DebugLog(DebugLevelInfo, DebugComponentAction,
 		"Found %d registered action callbacks", callbackCount)
 }
-
