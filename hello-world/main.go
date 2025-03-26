@@ -13,6 +13,12 @@ import (
 func main() {
 	// Initialize GTK (this is also done automatically on import)
 	// 
+
+	// Force software rendering to avoid OpenGL crashes
+	os.Setenv("GSK_RENDERER", "cairo")
+	os.Setenv("GDK_GL", "0")
+	os.Setenv("GDK_BACKEND", "x11") // Force X11 backend which is more stable
+
 	gtk4.EnableCallbackDebugging(true)
 	if err := gtk4go.Initialize(); err != nil {
 		log.Fatalf("Failed to initialize GTK: %v", err)
@@ -220,7 +226,7 @@ This demo showcases GTK4Go's layout containers and widgets.
 
 	// Create a selection model (SingleSelection)
 	selectionModel := gtk4.NewSingleSelection(listModel,
-		gtk4.WithAutoselect(true),
+		gtk4.WithAutoselect(false),
 		gtk4.WithInitialSelection(0),
 	)
 
@@ -283,6 +289,7 @@ This demo showcases GTK4Go's layout containers and widgets.
 		// Log the activation
 		activateLog := fmt.Sprintf("[%s] ListView: Item activated at position %d",
 			time.Now().Format("15:04:05"), position)
+		selectionModel.SetSelected(position)
 
 		// Create a log entry
 		logEntry := gtk4.NewLabel(activateLog)
