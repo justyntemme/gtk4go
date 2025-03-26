@@ -5,43 +5,12 @@ package gtk4
 // #cgo pkg-config: gtk4
 // #include <gtk/gtk.h>
 // #include <stdlib.h>
-//
-// // Signal callback function for adjustment value changes
-// extern void adjustmentValueChangedCallback(GtkAdjustment *adjustment, gpointer user_data);
-//
-// // Connect adjustment value-changed signal with callback
-// static gulong connectAdjustmentValueChanged(GtkAdjustment *adjustment, gpointer user_data) {
-//     return g_signal_connect(G_OBJECT(adjustment), "value-changed", G_CALLBACK(adjustmentValueChangedCallback), user_data);
-// }
 import "C"
 
 import (
 	"runtime"
-	"sync"
 	"unsafe"
 )
-
-// AdjustmentValueChangedCallback represents a callback for adjustment value changed events
-type AdjustmentValueChangedCallback func()
-
-var (
-	adjustmentCallbacks     = make(map[uintptr]AdjustmentValueChangedCallback)
-	adjustmentCallbackMutex sync.RWMutex
-)
-
-//export adjustmentValueChangedCallback
-func adjustmentValueChangedCallback(adjustment *C.GtkAdjustment, userData C.gpointer) {
-	adjustmentCallbackMutex.RLock()
-	defer adjustmentCallbackMutex.RUnlock()
-
-	// Convert adjustment pointer to uintptr for lookup
-	adjustmentPtr := uintptr(unsafe.Pointer(adjustment))
-
-	// Find and call the callback
-	if callback, ok := adjustmentCallbacks[adjustmentPtr]; ok {
-		callback()
-	}
-}
 
 // AdjustmentOption is a function that configures an adjustment
 type AdjustmentOption func(*Adjustment)
@@ -170,38 +139,30 @@ func (a *Adjustment) SetPageSize(size float64) {
 }
 
 // ConnectValueChanged connects a callback to the value-changed signal
-func (a *Adjustment) ConnectValueChanged(callback AdjustmentValueChangedCallback) {
-	adjustmentCallbackMutex.Lock()
-	defer adjustmentCallbackMutex.Unlock()
-
-	// Store callback in map
-	adjustmentPtr := uintptr(unsafe.Pointer(a.adjustment))
-	adjustmentCallbacks[adjustmentPtr] = callback
-
-	// Connect signal
-	C.connectAdjustmentValueChanged(a.adjustment, C.gpointer(unsafe.Pointer(a.adjustment)))
+func (a *Adjustment) ConnectValueChanged(callback func()) {
+	// Use the unified callback system
+	Connect(a, SignalValueChanged, callback)
 }
 
 // DisconnectValueChanged disconnects the value-changed signal handler
 func (a *Adjustment) DisconnectValueChanged() {
-	adjustmentCallbackMutex.Lock()
-	defer adjustmentCallbackMutex.Unlock()
-
-	// Remove callback from map
+	// Use the unified callback system to find and disconnect all callbacks
+	// for this object and signal
 	adjustmentPtr := uintptr(unsafe.Pointer(a.adjustment))
-	delete(adjustmentCallbacks, adjustmentPtr)
+	callbackIDs := getCallbackIDsForSignal(adjustmentPtr, SignalValueChanged)
+	
+	// Disconnect each callback
+	for _, id := range callbackIDs {
+		Disconnect(id)
+	}
 }
 
 // Free frees the adjustment
 func (a *Adjustment) Free() {
 	if a.adjustment != nil {
-		adjustmentCallbackMutex.Lock()
-		defer adjustmentCallbackMutex.Unlock()
-
-		// Remove callback from map if exists
-		adjustmentPtr := uintptr(unsafe.Pointer(a.adjustment))
-		delete(adjustmentCallbacks, adjustmentPtr)
-
+		// Disconnect all signal handlers
+		DisconnectAll(a)
+		
 		C.g_object_unref(C.gpointer(unsafe.Pointer(a.adjustment)))
 		a.adjustment = nil
 	}
