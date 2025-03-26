@@ -203,39 +203,3 @@ func (e *GTKError) Error() string {
 	}
 	return "gtk4go: " + e.Op
 }
-
-// SafeCallback safely executes a callback on the UI thread
-func SafeCallback(callback interface{}, args ...interface{}) {
-	// Import the main package for UI thread functions
-	// This avoids import cycles
-	if callback == nil {
-		return
-	}
-
-	// Execute the callback based on its type
-	switch cb := callback.(type) {
-	case func():
-		// Simple callback with no arguments
-		cb()
-	case func(interface{}):
-		// Callback with a single argument
-		if len(args) > 0 {
-			cb(args[0])
-		} else {
-			cb(nil)
-		}
-	case func(interface{}, interface{}):
-		// Callback with two arguments
-		if len(args) > 1 {
-			cb(args[0], args[1])
-		} else if len(args) > 0 {
-			cb(args[0], nil)
-		} else {
-			cb(nil, nil)
-		}
-	default:
-		// Unsupported callback type
-		// In a real implementation, you might want to handle more types
-		// or use reflection to call the function
-	}
-}

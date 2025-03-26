@@ -38,9 +38,8 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	// Import the main package for UI thread execution
-
-	gtk4go "../../gtk4go"
+	// Import core uithread package
+	"../core/uithread"
 )
 
 // SignalType represents the type of GTK signal
@@ -67,6 +66,11 @@ const (
 
 	// Window signals
 	SignalCloseRequest SignalType = "close-request"
+	
+	// Window resize signals
+	SignalResizeStart   SignalType = "resize-start"
+	SignalResizeEnd     SignalType = "resize-end"
+	SignalResizeUpdate  SignalType = "resize-update"
 
 	// Dialog signals
 	SignalResponse SignalType = "response"
@@ -267,6 +271,22 @@ func GetCallback(objectPtr uintptr, signal SignalType) interface{} {
 	return callback
 }
 
+// getCallbackIDsForSignal returns all callback IDs for a specific object and signal
+func getCallbackIDsForSignal(objectPtr uintptr, signal SignalType) []uint64 {
+    var ids []uint64
+    
+    // Scan all callbacks for matches
+    globalCallbackManager.callbacks.Range(func(id, value interface{}) bool {
+        data := value.(*callbackData)
+        if data.objectPtr == objectPtr && data.signal == signal {
+            ids = append(ids, id.(uint64))
+        }
+        return true
+    })
+    
+    return ids
+}
+
 // storeObjectCallback stores a callback by object pointer and signal type
 func (m *CallbackManager) storeObjectCallback(objectPtr uintptr, signal SignalType, callback interface{}) {
 	objectCallbacksValue, ok := m.objectCallbacks.Load(objectPtr)
@@ -414,7 +434,7 @@ func boolToGBoolean(b bool) C.gboolean {
 // to ensure thread safety with GTK
 func execCallback(callback interface{}, args ...interface{}) {
 	// Execute on UI thread to ensure GTK thread safety
-	gtk4go.RunOnUIThread(func() {
+	uithread.RunOnUIThread(func() {
 		// Execute the callback based on its type
 		switch cb := callback.(type) {
 		case func():
@@ -635,5 +655,7 @@ func GetCallbackStats() map[string]int {
 	return stats
 }
 
-// Note: StoreDirectCallback and SafeCallback are already defined in action.go and base.go respectively
-// They have been removed from this file to fix duplicate declarations
+// SafeCallback safely executes a callback, ensuring it runs on the UI thread
+func SafeCallback(callback interface{}, args ...interface{}) {
+	execCallback(callback, args...)
+}

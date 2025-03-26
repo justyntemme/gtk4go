@@ -1,4 +1,4 @@
-// Package gtk4 provides window resize detection for GTK4
+// Package gtk4 provides window resize detection for GTK4 using the unified callback system
 // File: gtk4go/gtk4/windowResize.go
 package gtk4
 
@@ -81,54 +81,40 @@ package gtk4
 import "C"
 
 import (
-	"sync"
 	"sync/atomic"
 	"time"
 	"unsafe"
+	
+	// Import the core uithread package for thread-safe operations
+	"../core/uithread"
 )
 
-var (
-	// Track resize state for each window
-	windowResizeState      = make(map[uintptr]*windowResizeData)
-	windowResizeStateMutex sync.RWMutex
-)
-
-// windowResizeData tracks resize state for a window
-type windowResizeData struct {
-	// Atomic fields for thread-safe access without mutex
-	isResizing      atomic.Bool     // Whether window is currently being resized
-	width           atomic.Int32    // Current window width
-	height          atomic.Int32    // Current window height
-	watcherID       atomic.Int64    // ID of the current resize watcher goroutine
-	
-	// Time values stored in atomic.Value
-	lastResizeTime  atomic.Value    // time.Time - Last time a resize event was detected
-	resizeStartTime atomic.Value    // time.Time - When resize operation began
-	
-	// Configuration fields (protected by mutex)
-	mu                 sync.RWMutex  // Mutex for non-atomic fields
-	onResizeStart      func()        // Function to call when resize starts
-	onResizeEnd        func()        // Function to call when resize ends
-	resizeEndThreshold time.Duration // Threshold to detect end of resize operation
+// windowResizeState stores state information for resize detection
+type windowResizeState struct {
+	// Atomic fields for thread-safe access
+	isResizing      atomic.Bool  // Whether window is currently being resized
+	width           atomic.Int32 // Current window width
+	height          atomic.Int32 // Current window height
+	lastResizeTime  atomic.Int64 // Last time a resize event was detected (Unix nano)
+	resizeStartTime atomic.Int64 // When resize operation began (Unix nano)
 }
 
-// ResizeCallback is a function called when resize state changes
-type ResizeCallback func()
+// Global map of window pointers to resize state
+var windowResizeStates = make(map[uintptr]*windowResizeState)
 
 //export windowPropertyNotifyCallback
 func windowPropertyNotifyCallback(object *C.GObject, pspec *C.GParamSpec, userData C.gpointer) {
 	windowPtr := uintptr(unsafe.Pointer(userData))
-
-	windowResizeStateMutex.RLock()
-	data, exists := windowResizeState[windowPtr]
-	windowResizeStateMutex.RUnlock()
-
-	if !exists {
+	
+	// Get or create state for this window
+	state, ok := windowResizeStates[windowPtr]
+	if !ok {
+		// Skip if window is not being tracked
 		return
 	}
-
+	
 	now := time.Now()
-	data.lastResizeTime.Store(now)
+	state.lastResizeTime.Store(now.UnixNano())
 
 	// Get current dimensions using C helper
 	var width, height C.int
@@ -139,15 +125,15 @@ func windowPropertyNotifyCallback(object *C.GObject, pspec *C.GParamSpec, userDa
 		return
 	}
 	
-	// Load old dimensions atomically and store new dimensions atomically
-	oldWidth := data.width.Load()
-	oldHeight := data.height.Load()
+	// Store the old and new dimensions
+	oldWidth := state.width.Load()
+	oldHeight := state.height.Load()
 	newWidth := int32(width)
 	newHeight := int32(height)
 	
-	// Store the new dimensions using atomic operations
-	data.width.Store(newWidth)
-	data.height.Store(newHeight)
+	// Store the new dimensions
+	state.width.Store(newWidth)
+	state.height.Store(newHeight)
 
 	// Check if dimensions actually changed
 	if newWidth == oldWidth && newHeight == oldHeight {
@@ -155,203 +141,190 @@ func windowPropertyNotifyCallback(object *C.GObject, pspec *C.GParamSpec, userDa
 	}
 
 	// Is this a new resize operation?
-	wasResizing := data.isResizing.Load()
+	wasResizing := state.isResizing.Load()
 	if !wasResizing {
-		// Mark as resizing using atomic operation
-		data.isResizing.Store(true)
-		data.resizeStartTime.Store(now)
+		// Mark as resizing
+		state.isResizing.Store(true)
+		state.resizeStartTime.Store(now.UnixNano())
 
-		// Call resize start handler if set (thread-safe access)
-		data.mu.RLock()
-		onResizeStart := data.onResizeStart
-		data.mu.RUnlock()
-		
-		if onResizeStart != nil {
-			onResizeStart()
-		}
-	}
-
-	// Ensure a watcher goroutine is running
-	startResizeWatcher(data, windowPtr)
-}
-
-// startResizeWatcher ensures a single watcher goroutine is running to detect resize completion
-func startResizeWatcher(data *windowResizeData, windowPtr uintptr) {
-	// Generate a unique watcher ID
-	newWatcherID := time.Now().UnixNano()
-	
-	// Try to set the new watcher ID using atomic operation, and get the old one
-	oldWatcherID := data.watcherID.Swap(newWatcherID)
-	
-	// If oldWatcherID was 0, no watcher was running
-	if oldWatcherID == 0 {
-		go resizeWatcherGoroutine(data, windowPtr, newWatcherID)
-	}
-	// If oldWatcherID was non-zero, a watcher is already running
-	// It will detect it's been replaced when it checks its ID
-}
-
-// resizeWatcherGoroutine monitors for resize completion
-func resizeWatcherGoroutine(data *windowResizeData, windowPtr uintptr, myID int64) {
-	// Get the threshold (thread-safe)
-	data.mu.RLock()
-	threshold := data.resizeEndThreshold
-	data.mu.RUnlock()
-	
-	// Wait for a short period to see if resize continues
-	time.Sleep(threshold)
-	
-	// Check if we're still the active watcher using atomic load
-	if data.watcherID.Load() != myID {
-		return // Another watcher has taken over
-	}
-	
-	// Mark that no watcher is running using atomic operation
-	data.watcherID.Store(int64(0))
-	
-	// Check if no new resize events have occurred
-	lastResizeTime, ok := data.lastResizeTime.Load().(time.Time)
-	if !ok {
-		return // Type assertion failed
-	}
-	
-	if time.Since(lastResizeTime) >= threshold {
-		// Resize has ended, but only if we're still in resize state
-		if data.isResizing.Swap(false) { // returns old value and sets to false atomically
-			// We were resizing and now we're not
-			
-			// Call resize end handler if set (thread-safe)
-			data.mu.RLock()
-			onResizeEnd := data.onResizeEnd
-			data.mu.RUnlock()
-			
-			if onResizeEnd != nil {
-				onResizeEnd()
-			}
+		// Trigger resize start callback via the unified callback system
+		if callback := GetCallback(windowPtr, SignalResizeStart); callback != nil {
+			// Execute the callback
+			SafeCallback(callback)
 		}
 	} else {
-		// Still getting resize events, start another watcher
-		startResizeWatcher(data, windowPtr)
+		// Trigger resize update callback via the unified callback system
+		if callback := GetCallback(windowPtr, SignalResizeUpdate); callback != nil {
+			// Execute the callback
+			SafeCallback(callback)
+		}
+	}
+	
+	// Start or restart resize end detection
+	go detectResizeEnd(windowPtr)
+}
+
+// detectResizeEnd waits for a period without resize events and then triggers the resize end callback
+func detectResizeEnd(windowPtr uintptr) {
+	// Default threshold for resize end detection (200ms)
+	threshold := 200 * time.Millisecond
+	
+	// Sleep for threshold duration
+	time.Sleep(threshold)
+	
+	// Get state
+	state, ok := windowResizeStates[windowPtr]
+	if !ok {
+		return // Window no longer being tracked
+	}
+	
+	// Check if resize has ended (no new events during threshold period)
+	lastResizeTime := time.Unix(0, state.lastResizeTime.Load())
+	if time.Since(lastResizeTime) >= threshold && state.isResizing.Load() {
+		// Mark resize as ended
+		state.isResizing.Store(false)
+		
+		// Trigger resize end callback via the unified callback system
+		if callback := GetCallback(windowPtr, SignalResizeEnd); callback != nil {
+			// Run on UI thread using our safe callback mechanism
+			uithread.RunOnUIThread(func() {
+				// Execute the callback safely
+				SafeCallback(callback)
+			})
+		}
 	}
 }
 
 // SetupResizeDetection sets up resize detection for a window
-func (w *Window) SetupResizeDetection(onResizeStart, onResizeEnd ResizeCallback) {
+func (w *Window) SetupResizeDetection() {
 	windowPtr := uintptr(unsafe.Pointer(w.widget))
-
-	// Create resize data with thread-safe initialization
-	data := &windowResizeData{
-		resizeEndThreshold: 200 * time.Millisecond, // Default threshold
-	}
-
-	// Store callbacks with mutex protection
-	data.mu.Lock()
-	data.onResizeStart = onResizeStart
-	data.onResizeEnd = onResizeEnd
-	data.mu.Unlock()
-
-	// Initialize atomic values
-	data.lastResizeTime.Store(time.Time{})
-	data.resizeStartTime.Store(time.Time{})
-	data.watcherID.Store(int64(0))
-
-	// Get initial window size
-	var width, height C.int
-	C.getWindowSize((*C.GtkWindow)(unsafe.Pointer(w.widget)), &width, &height)
 	
-	// Store the initial dimensions using atomic operations
-	data.width.Store(int32(width))
-	data.height.Store(int32(height))
-
-	// Store in map with mutex protection
-	windowResizeStateMutex.Lock()
-	windowResizeState[windowPtr] = data
-	windowResizeStateMutex.Unlock()
-
-	// Set up signal connections for resize detection
-	C.setupWindowResizeTracking((*C.GtkWindow)(unsafe.Pointer(w.widget)))
+	// Create resize state if not already exists
+	if _, ok := windowResizeStates[windowPtr]; !ok {
+		// Create resize state
+		state := &windowResizeState{}
+		
+		// Store initial window size
+		var width, height C.int
+		C.getWindowSize((*C.GtkWindow)(unsafe.Pointer(w.widget)), &width, &height)
+		state.width.Store(int32(width))
+		state.height.Store(int32(height))
+		
+		// Store state in global map
+		windowResizeStates[windowPtr] = state
+		
+		// Set up property notification in C
+		C.setupWindowResizeTracking((*C.GtkWindow)(unsafe.Pointer(w.widget)))
+	}
 }
 
-// SetupCSSOptimizedResize sets up CSS optimization during resize
-func (w *Window) SetupCSSOptimizedResize() {
-	// Set up resize detection with CSS optimization
-	w.SetupResizeDetection(
-		// On resize start
-		func() {
-			// Optimize all global CSS providers
-			optimizeAllProviders()
+// ConnectResizeStart connects a callback for when resize starts
+func (w *Window) ConnectResizeStart(callback func()) uint64 {
+	// Ensure resize detection is set up
+	w.SetupResizeDetection()
+	
+	// Use the unified callback system
+	return Connect(w, SignalResizeStart, callback)
+}
 
-			// Switch to lightweight CSS
-			display := C.gdk_display_get_default()
-			useResizeCSSProvider(display)
-		},
-		// On resize end
-		func() {
-			// Reset all global CSS providers
-			resetAllProviders()
+// ConnectResizeEnd connects a callback for when resize ends
+func (w *Window) ConnectResizeEnd(callback func()) uint64 {
+	// Ensure resize detection is set up
+	w.SetupResizeDetection()
+	
+	// Use the unified callback system
+	return Connect(w, SignalResizeEnd, callback)
+}
 
-			// Restore normal CSS
-			display := C.gdk_display_get_default()
-			restoreOriginalCSSProvider(display, nil)
-		},
-	)
+// ConnectResizeUpdate connects a callback for resize updates
+func (w *Window) ConnectResizeUpdate(callback func()) uint64 {
+	// Ensure resize detection is set up
+	w.SetupResizeDetection()
+	
+	// Use the unified callback system
+	return Connect(w, SignalResizeUpdate, callback)
+}
+
+// DisconnectResizeStart disconnects the resize start callback
+func (w *Window) DisconnectResizeStart() {
+	// Get all callbacks for this window
+	windowPtr := uintptr(unsafe.Pointer(w.widget))
+	callbackIDs := getCallbackIDsForSignal(windowPtr, SignalResizeStart)
+	
+	// Disconnect each callback
+	for _, id := range callbackIDs {
+		Disconnect(id)
+	}
+}
+
+// DisconnectResizeEnd disconnects the resize end callback
+func (w *Window) DisconnectResizeEnd() {
+	// Get all callbacks for this window
+	windowPtr := uintptr(unsafe.Pointer(w.widget))
+	callbackIDs := getCallbackIDsForSignal(windowPtr, SignalResizeEnd)
+	
+	// Disconnect each callback
+	for _, id := range callbackIDs {
+		Disconnect(id)
+	}
+}
+
+// DisconnectResizeUpdate disconnects the resize update callback
+func (w *Window) DisconnectResizeUpdate() {
+	// Get all callbacks for this window
+	windowPtr := uintptr(unsafe.Pointer(w.widget))
+	callbackIDs := getCallbackIDsForSignal(windowPtr, SignalResizeUpdate)
+	
+	// Disconnect each callback
+	for _, id := range callbackIDs {
+		Disconnect(id)
+	}
 }
 
 // IsResizing returns true if the window is currently being resized
 func (w *Window) IsResizing() bool {
 	windowPtr := uintptr(unsafe.Pointer(w.widget))
-
-	windowResizeStateMutex.RLock()
-	data, exists := windowResizeState[windowPtr]
-	windowResizeStateMutex.RUnlock()
-
-	if !exists {
+	state, ok := windowResizeStates[windowPtr]
+	if !ok {
 		return false
 	}
-
-	// Use atomic operation to get the resizing state
-	return data.isResizing.Load()
+	return state.isResizing.Load()
 }
 
 // GetSize returns the current window size
 func (w *Window) GetSize() (width, height int32) {
 	windowPtr := uintptr(unsafe.Pointer(w.widget))
-
-	windowResizeStateMutex.RLock()
-	data, exists := windowResizeState[windowPtr]
-	windowResizeStateMutex.RUnlock()
-
-	if !exists {
+	state, ok := windowResizeStates[windowPtr]
+	if !ok {
 		return 0, 0
 	}
-
-	// Use atomic operations to get the dimensions
-	return data.width.Load(), data.height.Load()
-}
-
-// SetResizeEndThreshold sets the time threshold for detecting the end of a resize operation
-func (w *Window) SetResizeEndThreshold(threshold time.Duration) {
-	windowPtr := uintptr(unsafe.Pointer(w.widget))
-
-	windowResizeStateMutex.RLock()
-	data, exists := windowResizeState[windowPtr]
-	windowResizeStateMutex.RUnlock()
-
-	if !exists {
-		return
-	}
-
-	// Use mutex for non-atomic field
-	data.mu.Lock()
-	data.resizeEndThreshold = threshold
-	data.mu.Unlock()
+	return state.width.Load(), state.height.Load()
 }
 
 // CleanupResizeDetection cleans up resize detection for a window
 func (w *Window) CleanupResizeDetection() {
-	windowPtr := uintptr(unsafe.Pointer(w.widget))
+	// Remove resize state
+	delete(windowResizeStates, uintptr(unsafe.Pointer(w.widget)))
+}
 
-	windowResizeStateMutex.Lock()
-	delete(windowResizeState, windowPtr)
-	windowResizeStateMutex.Unlock()
+// SetupCSSOptimizedResize sets up CSS optimization during resize
+func (w *Window) SetupCSSOptimizedResize() {
+	// Set up resize callbacks for CSS optimization
+	w.ConnectResizeStart(func() {
+		// Optimize all global CSS providers
+		optimizeAllProviders()
+
+		// Switch to lightweight CSS
+		display := C.gdk_display_get_default()
+		useResizeCSSProvider(display)
+	})
+	
+	w.ConnectResizeEnd(func() {
+		// Reset all global CSS providers
+		resetAllProviders()
+
+		// Restore normal CSS
+		display := C.gdk_display_get_default()
+		restoreOriginalCSSProvider(display, nil)
+	})
 }

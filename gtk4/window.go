@@ -221,9 +221,14 @@ func (w *Window) ConnectCloseRequest(callback func() bool) uint64 {
 
 // DisconnectCloseRequest disconnects the close-request signal handler
 func (w *Window) DisconnectCloseRequest() {
-	// We'll search for callbacks connected to the SignalCloseRequest signal type
-	// Ideally we would have a DisconnectBySignal function in callbacks.go to handle this more elegantly
-	DisconnectAll(w)
+	// Get all callbacks for this window
+	windowPtr := uintptr(unsafe.Pointer(w.widget))
+	callbackIDs := getCallbackIDsForSignal(windowPtr, SignalCloseRequest)
+	
+	// Disconnect each callback
+	for _, id := range callbackIDs {
+		Disconnect(id)
+	}
 }
 
 // Destroy destroys the window and cleans up resources
@@ -233,7 +238,7 @@ func (w *Window) Destroy() {
 		DisconnectAll(w)
 		
 		// Clean up window resize detection if it was set up
-		w.CleanupResizeDetection()
+		delete(windowResizeStates, uintptr(unsafe.Pointer(w.widget)))
 
 		// Destroy the window
 		C.gtk_window_destroy((*C.GtkWindow)(unsafe.Pointer(w.widget)))
