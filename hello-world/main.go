@@ -29,7 +29,7 @@ func main() {
 
 	// Create a window with optimized rendering
 	win := gtk4.NewWindow("Hello GTK4 from Go!")
-	win.SetDefaultSize(900, 650)
+	win.SetDefaultSize(1300, 950)
 
 	// Enable hardware-accelerated rendering
 	win.EnableAcceleratedRendering()
