@@ -1,8 +1,8 @@
 package main
 
 import (
-	"../../gtk4go"
-	"../gtk4"
+	"../../../gtk4go"
+	"../../gtk4"
 	"context"
 	"fmt"
 	"log"
@@ -12,7 +12,7 @@ import (
 
 func main() {
 	// Initialize GTK (this is also done automatically on import)
-	// 
+	//
 
 	// Force software rendering to avoid OpenGL crashes
 	os.Setenv("GSK_RENDERER", "cairo")
@@ -923,3 +923,4 @@ This demo showcases GTK4Go's layout containers and widgets.
 
 // Variable for long task cancellation
 var cancelFunc context.CancelFunc
+
