@@ -13,6 +13,17 @@ import (
 	"time"
 )
 
+// Define constants for styling and sizing
+const (
+	APP_ID         = "com.example.system-info"
+	TITLE          = "System Info"
+	DEFAULT_WIDTH  = 900
+	DEFAULT_HEIGHT = 600
+
+	// Auto-refresh interval in seconds (0 = disabled)
+	AUTO_REFRESH_INTERVAL = 30
+)
+
 // labelMap stores references to labels for updating
 type labelMap struct {
 	labels map[string]*gtk4.Label
@@ -34,12 +45,22 @@ func (lm *labelMap) update(key string, value string) {
 	}
 }
 
+// Global variables for data and UI state
+var (
+	osLabels           *labelMap
+	cpuLabels          *labelMap
+	memoryLabels       *labelMap
+	diskLabels         *labelMap
+	statusLabel        *gtk4.Label
+	autoRefreshEnabled bool = true
+	isRefreshing       bool = false
+	lastRefreshTime    time.Time
+	autoRefreshTimer   *time.Timer
+)
+
 func main() {
-	// Force software rendering to avoid OpenGL crashes
-	// These environment variables need to be set BEFORE GTK is initialized
-	os.Setenv("GSK_RENDERER", "cairo") // Use Cairo renderer instead of GL
-	os.Setenv("GDK_GL", "0")           // Disable OpenGL
-	os.Setenv("GDK_BACKEND", "x11")    // Force X11 backend which is more stable
+	os.Setenv("GSK_RENDERER", "cairo")
+	os.Setenv("GDK_GL", "0")
 
 	// Initialize GTK
 	if err := gtk4go.Initialize(); err != nil {
@@ -48,199 +69,215 @@ func main() {
 	}
 
 	// Create application
-	app := gtk4.NewApplication("com.example.linuxsysteminfo")
+	app := gtk4.NewApplication(APP_ID)
 
 	// Create window
-	win := gtk4.NewWindow("Linux System Info")
-	win.SetDefaultSize(800, 600)
-	// Disable hardware acceleration to prevent crashes
-	win.DisableAcceleratedRendering()
+	win := gtk4.NewWindow(TITLE)
+	win.SetDefaultSize(DEFAULT_WIDTH, DEFAULT_HEIGHT)
 
-	// Create main vertical box
-	mainBox := gtk4.NewBox(gtk4.OrientationVertical, 10)
-
-	// Create header with title
-	headerLabel := gtk4.NewLabel("Linux System Information")
-	headerLabel.AddCssClass("header-label")
-	mainBox.Append(headerLabel)
-
-	// Create stack for tabs
-	stack := gtk4.NewStack(
-		gtk4.WithTransitionType(gtk4.StackTransitionTypeSlideLeftRight),
-		gtk4.WithTransitionDuration(200),
-	)
-
-	// Create OS Info tab
-	osInfoBox, osLabels := createOSInfoTab()
-	stack.AddTitled(osInfoBox, "os-info", "OS Info")
-
-	// Create Hardware tab
-	hardwareBox, cpuLabels, ramLabels, diskLabel := createHardwareTab()
-	stack.AddTitled(hardwareBox, "hardware", "Hardware")
-
-	// Create stack switcher (tab bar)
-	stackSwitcher := gtk4.NewStackSwitcher(stack)
-	stackSwitcher.AddCssClass("stack-switcher")
-
-	// Add the stack switcher and stack to the main box
-	mainBox.Append(stackSwitcher)
-	mainBox.Append(stack)
-
-	// Load CSS for styling
-	cssProvider, err := gtk4.LoadCSS(`
-		.header-label {
-			font-size: 24px;
-			font-weight: bold;
-			padding: 15px;
-			color: #2a76c6;
-		}
-		.stack-switcher {
-			padding: 8px;
-		}
-		.info-label {
-			font-size: 14px;
-			padding: 4px;
-		}
-		.info-category {
-			font-size: 18px;
-			font-weight: bold;
-			padding: 10px;
-			color: #2a76c6;
-			border-bottom: 1px solid #cccccc;
-			margin-bottom: 10px;
-		}
-		.info-grid {
-			margin: 15px;
-		}
-		.info-key {
-			font-weight: bold;
-			color: #333333;
-			padding-right: 10px;
-		}
-		.info-value {
-			color: #0066cc;
-		}
-		.info-section {
-			background-color: #f5f5f5;
-			border-radius: 4px;
-			padding: 12px;
-			margin: 8px;
-		}
-		.usage-bar {
-			min-height: 20px;
-			border-radius: 3px;
-			background-color: #e0e0e0;
-		}
-		.usage-bar-fill {
-			background-color: #4caf50;
-			border-radius: 3px;
-		}
-		.refresh-button {
-			padding: 8px 16px;
-			background-color: #3584e4;
-			color: white;
-			font-weight: bold;
-			border-radius: 4px;
-		}
-		.refresh-button:hover {
-			background-color: #1c71d8;
-		}
-		.status-label {
-			font-style: italic;
-			color: #666666;
-			padding: 5px;
-		}
-	`)
-	if err != nil {
-		fmt.Printf("Failed to load CSS: %v\n", err)
-	} else {
-		// Apply CSS provider to the entire application
-		gtk4.AddProviderForDisplay(cssProvider, 600)
-	}
-
-	// Create refresh button
-	refreshButton := gtk4.NewButton("Refresh Data")
-	refreshButton.AddCssClass("refresh-button")
-
-	// Status label
-	statusLabel := gtk4.NewLabel("Ready")
-	statusLabel.AddCssClass("status-label")
-
-	// Create bottom bar with refresh button and status
-	bottomBar := gtk4.NewBox(gtk4.OrientationHorizontal, 10)
-	bottomBar.Append(refreshButton)
-	bottomBar.Append(statusLabel)
-	mainBox.Append(bottomBar)
-
-	// Set up refresh functionality
-	refreshButton.ConnectClicked(func() {
-		statusLabel.SetText("Refreshing data...")
-
-		// Use background worker to avoid UI freezing
-		gtk4go.RunInBackground(func() (interface{}, error) {
-			// Refresh OS Info
-			refreshOSInfo(osLabels)
-
-			// Refresh CPU Info
-			refreshCPUInfo(cpuLabels)
-
-			// Refresh RAM Info
-			refreshRAMInfo(ramLabels)
-
-			// Refresh Disk Info
-			refreshDiskInfo(diskLabel)
-
-			return "Data refreshed at " + time.Now().Format("15:04:05"), nil
-		}, func(result interface{}, err error) {
-			if err != nil {
-				statusLabel.SetText("Error refreshing data: " + err.Error())
-			} else {
-				statusLabel.SetText(result.(string))
-			}
-		})
-	})
-
-	// Auto-refresh when application starts
-	win.ConnectCloseRequest(func() bool {
-		return false // Return false to allow window to close
-	})
-
-	// Initial data load
-	refreshOSInfo(osLabels)
-	refreshCPUInfo(cpuLabels)
-	refreshRAMInfo(ramLabels)
-	refreshDiskInfo(diskLabel)
+	// Create main layout
+	mainBox := createMainLayout(win)
 
 	// Set the window's child to the main box
 	win.SetChild(mainBox)
 
+	// Set up window close handler
+	win.ConnectCloseRequest(func() bool {
+		// Clean up resources
+		if autoRefreshTimer != nil {
+			autoRefreshTimer.Stop()
+		}
+		return false // Return false to allow window to close
+	})
+
 	// Add window to application
 	app.AddWindow(win)
+
+	// Start auto-refresh timer if enabled
+	if AUTO_REFRESH_INTERVAL > 0 {
+		startAutoRefreshTimer()
+	}
 
 	// Run the application
 	os.Exit(app.Run())
 }
 
-// createOSInfoTab creates the OS Information tab
-func createOSInfoTab() (*gtk4.Box, *labelMap) {
-	// Create main box
-	osInfoBox := gtk4.NewBox(gtk4.OrientationVertical, 10)
-	osInfoBox.AddCssClass("info-section")
+// startAutoRefreshTimer starts the auto-refresh timer
+func startAutoRefreshTimer() {
+	if autoRefreshTimer != nil {
+		autoRefreshTimer.Stop()
+	}
 
-	// Create section header
-	osHeader := gtk4.NewLabel("Operating System Information")
-	osHeader.AddCssClass("info-category")
-	osInfoBox.Append(osHeader)
+	autoRefreshTimer = time.AfterFunc(time.Duration(AUTO_REFRESH_INTERVAL)*time.Second, func() {
+		// Only refresh if auto-refresh is enabled and not currently refreshing
+		if autoRefreshEnabled && !isRefreshing {
+			gtk4go.RunOnUIThread(func() {
+				refreshAllData()
+				// Restart timer for next refresh
+				startAutoRefreshTimer()
+			})
+		} else {
+			// Restart timer anyway
+			startAutoRefreshTimer()
+		}
+	})
+}
 
-	// Create grid for labels
+// createMainLayout builds the main app UI structure
+func createMainLayout(win *gtk4.Window) *gtk4.Box {
+	// Create main vertical box
+	mainBox := gtk4.NewBox(gtk4.OrientationVertical, 0)
+
+	// Create header with application title and controls
+	header := createHeaderBar()
+	mainBox.Append(header)
+
+	// Create a horizontal box for sidebar and content
+	contentBox := gtk4.NewBox(gtk4.OrientationHorizontal, 0)
+
+	// Create stack for different views
+	stack := gtk4.NewStack(
+		gtk4.WithTransitionType(gtk4.StackTransitionTypeSlideLeftRight),
+		gtk4.WithTransitionDuration(200),
+	)
+
+	// Create each info panel
+	systemPanel, osLabelsMap := createSystemPanel()
+	osLabels = osLabelsMap
+
+	hardwarePanel, cpuLabelsMap, memLabelsMap, diskLabelsMap := createHardwarePanel()
+	cpuLabels = cpuLabelsMap
+	memoryLabels = memLabelsMap
+	diskLabels = diskLabelsMap
+
+	// Add panels to stack
+	stack.AddTitled(systemPanel, "system", "System")
+	stack.AddTitled(hardwarePanel, "hardware", "Hardware")
+
+	// Create sidebar for navigation (pass stack for navigation)
+	sidebar := createSidebar(stack)
+
+	// Create bottom status bar
+	statusBox := createStatusBar()
+
+	// Add sidebar and stack to content box
+	contentBox.Append(sidebar)
+	contentBox.Append(stack)
+
+	// Add content and status bar to main box
+	mainBox.Append(contentBox)
+	mainBox.Append(statusBox)
+
+	// Load CSS styling
+	loadAppStyles()
+
+	// Initial data load
+	refreshAllData()
+
+	return mainBox
+}
+
+// createHeaderBar builds the application header bar
+func createHeaderBar() *gtk4.Box {
+	headerBar := gtk4.NewBox(gtk4.OrientationHorizontal, 0)
+	headerBar.AddCssClass("header-bar")
+
+	// App Title
+	titleLabel := gtk4.NewLabel(TITLE)
+	titleLabel.AddCssClass("header-title")
+
+	// Spacer to push refresh button to the right
+	spacer := gtk4.NewBox(gtk4.OrientationHorizontal, 0)
+	spacer.SetHExpand(true)
+
+	// Refresh button with icon
+	refreshButton := gtk4.NewButton("Refresh")
+	refreshButton.AddCssClass("refresh-button")
+
+	// Connect refresh button click
+	refreshButton.ConnectClicked(func() {
+		refreshAllData()
+	})
+
+	// Add elements to header
+	headerBar.Append(titleLabel)
+	headerBar.Append(spacer)
+	headerBar.Append(refreshButton)
+
+	return headerBar
+}
+
+// createSidebar builds the navigation sidebar
+func createSidebar(stack *gtk4.Stack) *gtk4.Box {
+	sidebar := gtk4.NewBox(gtk4.OrientationVertical, 0)
+	sidebar.AddCssClass("sidebar")
+	sidebar.SetHExpand(false)
+
+	// System Info button
+	systemBtn := gtk4.NewButton("System Info")
+	systemBtn.AddCssClass("sidebar-button")
+	systemBtn.AddCssClass("sidebar-button-selected")
+
+	// Hardware button
+	hardwareBtn := gtk4.NewButton("Hardware")
+	hardwareBtn.AddCssClass("sidebar-button")
+
+	// Connect System button click handler to show the system panel
+	systemBtn.ConnectClicked(func() {
+		// Update visual selection state
+		systemBtn.AddCssClass("sidebar-button-selected")
+		hardwareBtn.RemoveCssClass("sidebar-button-selected")
+
+		// Switch stack to system panel
+		stack.SetVisibleChildName("system")
+	})
+
+	// Connect Hardware button click handler to show the hardware panel
+	hardwareBtn.ConnectClicked(func() {
+		// Update visual selection state
+		hardwareBtn.AddCssClass("sidebar-button-selected")
+		systemBtn.RemoveCssClass("sidebar-button-selected")
+
+		// Switch stack to hardware panel
+		stack.SetVisibleChildName("hardware")
+	})
+
+	// Add buttons to sidebar
+	sidebar.Append(systemBtn)
+	sidebar.Append(hardwareBtn)
+
+	// Add spacing at the bottom of the sidebar
+	spacer := gtk4.NewBox(gtk4.OrientationVertical, 0)
+	spacer.SetVExpand(true)
+	sidebar.Append(spacer)
+
+	return sidebar
+}
+
+// createSystemPanel builds the system information panel
+func createSystemPanel() (*gtk4.Box, *labelMap) {
+	// Create main container
+	panel := gtk4.NewBox(gtk4.OrientationVertical, 16)
+	panel.AddCssClass("content-panel")
+
+	// Section title
+	titleLabel := gtk4.NewLabel("System Information")
+	titleLabel.AddCssClass("panel-title")
+	panel.Append(titleLabel)
+
+	// Create info card
+	card := gtk4.NewBox(gtk4.OrientationVertical, 8)
+	card.AddCssClass("info-card")
+
+	// Create grid for info items
 	grid := gtk4.NewGrid(
 		gtk4.WithRowSpacing(8),
-		gtk4.WithColumnSpacing(15),
+		gtk4.WithColumnSpacing(24),
 		gtk4.WithRowHomogeneous(false),
 	)
 	grid.AddCssClass("info-grid")
 
-	// Add row headers
+	// Add labels map to store references
 	labels := newLabelMap()
 
 	// OS Name
@@ -267,28 +304,46 @@ func createOSInfoTab() (*gtk4.Box, *labelMap) {
 	// Shell
 	addInfoRow(grid, 7, "Default Shell:", "", labels, "shell")
 
-	osInfoBox.Append(grid)
+	// Add grid to card
+	card.Append(grid)
 
-	return osInfoBox, labels
+	// Add card to panel
+	panel.Append(card)
+
+	return panel, labels
 }
 
-// createHardwareTab creates the Hardware Information tab
-func createHardwareTab() (*gtk4.Box, *labelMap, *labelMap, *labelMap) {
-	// Create main box
-	hardwareBox := gtk4.NewBox(gtk4.OrientationVertical, 10)
+// createHardwarePanel builds the hardware information panel
+func createHardwarePanel() (*gtk4.Box, *labelMap, *labelMap, *labelMap) {
+	// Create main container with scrolling
+	containerBox := gtk4.NewBox(gtk4.OrientationVertical, 0)
 
-	// CPU Info Section
-	cpuSection := gtk4.NewBox(gtk4.OrientationVertical, 5)
-	cpuSection.AddCssClass("info-section")
+	scrollWin := gtk4.NewScrolledWindow(
+		gtk4.WithHScrollbarPolicy(gtk4.ScrollbarPolicyNever),
+		gtk4.WithVScrollbarPolicy(gtk4.ScrollbarPolicyAutomatic),
+	)
 
+	panel := gtk4.NewBox(gtk4.OrientationVertical, 16)
+	panel.AddCssClass("content-panel")
+
+	// Section title
+	titleLabel := gtk4.NewLabel("Hardware Information")
+	titleLabel.AddCssClass("panel-title")
+	panel.Append(titleLabel)
+
+	// Create CPU info card
+	cpuCard := gtk4.NewBox(gtk4.OrientationVertical, 8)
+	cpuCard.AddCssClass("info-card")
+
+	// CPU Section Header
 	cpuHeader := gtk4.NewLabel("CPU Information")
-	cpuHeader.AddCssClass("info-category")
-	cpuSection.Append(cpuHeader)
+	cpuHeader.AddCssClass("card-title")
+	cpuCard.Append(cpuHeader)
 
-	// Create grid for CPU labels
+	// CPU Grid
 	cpuGrid := gtk4.NewGrid(
 		gtk4.WithRowSpacing(8),
-		gtk4.WithColumnSpacing(15),
+		gtk4.WithColumnSpacing(24),
 		gtk4.WithRowHomogeneous(false),
 	)
 	cpuGrid.AddCssClass("info-grid")
@@ -310,76 +365,132 @@ func createHardwareTab() (*gtk4.Box, *labelMap, *labelMap, *labelMap) {
 	// CPU Usage
 	addInfoRow(cpuGrid, 4, "CPU Usage:", "", cpuLabels, "cpu_usage")
 
-	cpuSection.Append(cpuGrid)
-	hardwareBox.Append(cpuSection)
+	cpuCard.Append(cpuGrid)
+	panel.Append(cpuCard)
 
-	// RAM Info Section
-	ramSection := gtk4.NewBox(gtk4.OrientationVertical, 5)
-	ramSection.AddCssClass("info-section")
+	// Create Memory info card
+	memoryCard := gtk4.NewBox(gtk4.OrientationVertical, 8)
+	memoryCard.AddCssClass("info-card")
 
-	ramHeader := gtk4.NewLabel("Memory Information")
-	ramHeader.AddCssClass("info-category")
-	ramSection.Append(ramHeader)
+	// Memory Section Header
+	memoryHeader := gtk4.NewLabel("Memory Information")
+	memoryHeader.AddCssClass("card-title")
+	memoryCard.Append(memoryHeader)
 
-	// Create grid for RAM labels
-	ramGrid := gtk4.NewGrid(
+	// Memory Grid
+	memoryGrid := gtk4.NewGrid(
 		gtk4.WithRowSpacing(8),
-		gtk4.WithColumnSpacing(15),
+		gtk4.WithColumnSpacing(24),
 		gtk4.WithRowHomogeneous(false),
 	)
-	ramGrid.AddCssClass("info-grid")
+	memoryGrid.AddCssClass("info-grid")
 
-	ramLabels := newLabelMap()
+	memoryLabels := newLabelMap()
 
 	// Total RAM
-	addInfoRow(ramGrid, 0, "Total RAM:", "", ramLabels, "ram_total")
+	addInfoRow(memoryGrid, 0, "Total RAM:", "", memoryLabels, "ram_total")
 
 	// Used RAM
-	addInfoRow(ramGrid, 1, "Used RAM:", "", ramLabels, "ram_used")
+	addInfoRow(memoryGrid, 1, "Used RAM:", "", memoryLabels, "ram_used")
 
 	// Free RAM
-	addInfoRow(ramGrid, 2, "Free RAM:", "", ramLabels, "ram_free")
+	addInfoRow(memoryGrid, 2, "Free RAM:", "", memoryLabels, "ram_free")
 
 	// RAM Usage
-	addInfoRow(ramGrid, 3, "RAM Usage:", "", ramLabels, "ram_usage")
+	addInfoRow(memoryGrid, 3, "RAM Usage:", "", memoryLabels, "ram_usage")
 
 	// Swap Total
-	addInfoRow(ramGrid, 4, "Swap Total:", "", ramLabels, "swap_total")
+	addInfoRow(memoryGrid, 4, "Swap Total:", "", memoryLabels, "swap_total")
 
 	// Swap Used
-	addInfoRow(ramGrid, 5, "Swap Used:", "", ramLabels, "swap_used")
+	addInfoRow(memoryGrid, 5, "Swap Used:", "", memoryLabels, "swap_used")
 
-	ramSection.Append(ramGrid)
-	hardwareBox.Append(ramSection)
+	memoryCard.Append(memoryGrid)
+	panel.Append(memoryCard)
 
-	// Disk Info Section
-	diskSection := gtk4.NewBox(gtk4.OrientationVertical, 5)
-	diskSection.AddCssClass("info-section")
+	// Create Disk info card
+	diskCard := gtk4.NewBox(gtk4.OrientationVertical, 8)
+	diskCard.AddCssClass("info-card")
 
+	// Disk Section Header
 	diskHeader := gtk4.NewLabel("Disk Information")
-	diskHeader.AddCssClass("info-category")
-	diskSection.Append(diskHeader)
+	diskHeader.AddCssClass("card-title")
+	diskCard.Append(diskHeader)
 
-	// Create container for disk info
-	diskLabels := newLabelMap()
-
-	// We'll create a scrolled window for disk information since there could be many disks
-	scrollWin := gtk4.NewScrolledWindow(
-		gtk4.WithHScrollbarPolicy(gtk4.ScrollbarPolicyNever),
-		gtk4.WithVScrollbarPolicy(gtk4.ScrollbarPolicyAutomatic),
-	)
-
-	diskBox := gtk4.NewBox(gtk4.OrientationVertical, 5)
+	// Create box for disk info
+	diskBox := gtk4.NewBox(gtk4.OrientationVertical, 8)
 	diskBox.AddCssClass("info-grid")
-	scrollWin.SetChild(diskBox)
 
-	diskSection.Append(scrollWin)
-	hardwareBox.Append(diskSection)
+	// Disk Storage Label (will contain formatted disk info)
+	diskInfoLabel := gtk4.NewLabel("")
+	diskInfoLabel.AddCssClass("disk-info")
+	diskBox.Append(diskInfoLabel)
 
-	return hardwareBox, cpuLabels, ramLabels, diskLabels
+	diskLabels := newLabelMap()
+	diskLabels.add("disk_info", diskInfoLabel)
+
+	diskCard.Append(diskBox)
+	panel.Append(diskCard)
+
+	// Set the panel as the scrollable content
+	scrollWin.SetChild(panel)
+
+	// Add scrolled window to the container box
+	containerBox.Append(scrollWin)
+
+	return containerBox, cpuLabels, memoryLabels, diskLabels
 }
 
-// addInfoRow adds a row to the info grid with a key/value pair
+// createStatusBar builds the status bar at the bottom of the window
+func createStatusBar() *gtk4.Box {
+	statusBar := gtk4.NewBox(gtk4.OrientationHorizontal, 8)
+	statusBar.AddCssClass("status-bar")
+
+	// Status indicator
+	statusLabel = gtk4.NewLabel("Ready")
+	statusLabel.AddCssClass("status-label")
+
+	// Add auto-refresh toggle button
+	autoRefreshButton := gtk4.NewButton("Auto-refresh: On")
+	autoRefreshButton.AddCssClass("toggle-button")
+
+	// Connect button to toggle auto-refresh state
+	autoRefreshButton.ConnectClicked(func() {
+		autoRefreshEnabled = !autoRefreshEnabled
+		if autoRefreshEnabled {
+			autoRefreshButton.SetLabel("Auto-refresh: On")
+			// Start auto-refresh if interval is set
+			if AUTO_REFRESH_INTERVAL > 0 {
+				startAutoRefreshTimer()
+			}
+		} else {
+			autoRefreshButton.SetLabel("Auto-refresh: Off")
+			// Stop auto-refresh timer
+			if autoRefreshTimer != nil {
+				autoRefreshTimer.Stop()
+			}
+		}
+	})
+
+	// Add elements to status bar
+	statusBar.Append(statusLabel)
+
+	// Create right-aligned area for refresh info
+	spacer := gtk4.NewBox(gtk4.OrientationHorizontal, 0)
+	spacer.SetHExpand(true)
+
+	// Last updated info
+	lastUpdatedLabel := gtk4.NewLabel("Last updated: Never")
+	lastUpdatedLabel.AddCssClass("update-time")
+
+	statusBar.Append(spacer)
+	statusBar.Append(autoRefreshButton)
+	statusBar.Append(lastUpdatedLabel)
+
+	return statusBar
+}
+
+// addInfoRow adds a row to an info grid with key/value pair
 func addInfoRow(grid *gtk4.Grid, row int, key string, value string, labels *labelMap, labelKey string) {
 	keyLabel := gtk4.NewLabel(key)
 	keyLabel.AddCssClass("info-key")
@@ -390,6 +501,189 @@ func addInfoRow(grid *gtk4.Grid, row int, key string, value string, labels *labe
 	grid.Attach(valueLabel, 1, row, 1, 1)
 
 	labels.add(labelKey, valueLabel)
+}
+
+// refreshAllData updates all system information
+func refreshAllData() {
+	if isRefreshing {
+		return
+	}
+
+	isRefreshing = true
+	statusLabel.SetText("Refreshing data...")
+
+	// Use background worker to avoid UI freezing
+	gtk4go.RunInBackground(func() (interface{}, error) {
+		// Refresh OS Info
+		refreshOSInfo(osLabels)
+
+		// Refresh CPU Info
+		refreshCPUInfo(cpuLabels)
+
+		// Refresh RAM Info
+		refreshRAMInfo(memoryLabels)
+
+		// Refresh Disk Info
+		refreshDiskInfo(diskLabels)
+
+		return "Data refreshed at " + time.Now().Format("15:04:05"), nil
+	}, func(result interface{}, err error) {
+		isRefreshing = false
+		lastRefreshTime = time.Now()
+
+		if err != nil {
+			statusLabel.SetText("Error refreshing data: " + err.Error())
+		} else {
+			statusLabel.SetText("Ready")
+
+			// Find the lastUpdatedLabel in the status bar and update it
+			gtk4go.RunOnUIThread(func() {
+				// Find all labels in the window that have the "update-time" class
+				// For a real app, we'd store a reference to this label
+				// This is a simplified approach
+				updateTimeStr := "Last updated: " + time.Now().Format("15:04:05")
+				statusLabel.SetText("Ready - " + updateTimeStr)
+			})
+		}
+	})
+}
+
+// loadAppStyles loads CSS styles for the application
+func loadAppStyles() {
+	cssProvider, err := gtk4.LoadCSS(`
+		window {
+			background-color: #f5f5f5;
+		}
+		
+		.header-bar {
+			background-color: #3584e4;
+			color: white;
+			padding: 8px 16px;
+			min-height: 48px;
+		}
+		
+		.header-title {
+			font-size: 18px;
+			font-weight: bold;
+			color: white;
+		}
+		
+		.refresh-button {
+			padding: 8px 16px;
+			background-color: rgba(255, 255, 255, 0.1);
+			color: white;
+			border-radius: 4px;
+		}
+		
+		.sidebar {
+			background-color: #323232;
+			min-width: 200px;
+			padding: 0;
+		}
+		
+		.sidebar-button {
+			background-color: transparent;
+			color: #eeeeee;
+			border-radius: 0;
+			border-left: 4px solid transparent;
+			padding: 16px;
+			margin: 0;
+		}
+		
+		.sidebar-button:hover {
+			background-color: rgba(255, 255, 255, 0.1);
+		}
+		
+		.sidebar-button-selected {
+			background-color: rgba(255, 255, 255, 0.15);
+			border-left: 4px solid #3584e4;
+			font-weight: bold;
+		}
+		
+		.content-panel {
+			padding: 24px;
+			background-color: #fafafa;
+		}
+		
+		.panel-title {
+			font-size: 22px;
+			font-weight: bold;
+			margin-bottom: 16px;
+			color: #303030;
+		}
+		
+		.info-card {
+			background-color: white;
+			border-radius: 8px;
+			padding: 16px;
+			margin-bottom: 16px;
+			box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+		}
+		
+		.card-title {
+			font-size: 16px;
+			font-weight: bold;
+			margin-bottom: 8px;
+			color: #303030;
+		}
+		
+		.info-grid {
+			margin: 8px 0;
+		}
+		
+		.info-key {
+			font-weight: normal;
+			color: #707070;
+			padding-right: 16px;
+		}
+		
+		.info-value {
+			font-weight: bold;
+			color: #303030;
+		}
+		
+		.disk-info {
+			font-family: monospace;
+			padding: 12px;
+			border-radius: 4px;
+			background-color: #f5f5f5;
+		}
+		
+		.status-bar {
+			background-color: #323232;
+			color: #eeeeee;
+			padding: 8px 16px;
+			border-top: 1px solid #444444;
+		}
+		
+		.status-label {
+			color: #eeeeee;
+		}
+		
+		.update-time {
+			color: #bbbbbb;
+			font-size: 12px;
+		}
+		
+		.toggle-button {
+			background-color: rgba(255, 255, 255, 0.1);
+			border-radius: 4px;
+			padding: 4px 8px;
+			color: #eeeeee;
+			font-size: 12px;
+		}
+		
+		.toggle-button:hover {
+			background-color: rgba(255, 255, 255, 0.2);
+		}
+	`)
+
+	if err != nil {
+		fmt.Printf("Failed to load CSS: %v\n", err)
+	} else {
+		// Apply CSS provider to the entire application
+		gtk4.AddProviderForDisplay(cssProvider, 600)
+	}
 }
 
 // refreshOSInfo updates the OS information labels
@@ -497,26 +791,43 @@ func refreshDiskInfo(labels *labelMap) {
 		return
 	}
 
-	// Create formatted output
+	// Create formatted output with pretty table
 	var formattedOutput strings.Builder
+
+	// Create header
+	formattedOutput.WriteString(fmt.Sprintf("%-16s %-8s %-8s %-8s %-6s %-s\n",
+		"Device", "Size", "Used", "Avail", "Use%", "Mount Point"))
+	formattedOutput.WriteString(strings.Repeat("-", 80) + "\n")
+
+	// Process each line except header
 	for i, line := range lines {
 		if i == 0 || len(strings.TrimSpace(line)) == 0 {
-			// Skip header or empty lines
+			// Skip header and empty lines
 			continue
 		}
 
 		fields := strings.Fields(line)
-		if len(fields) >= 5 {
-			// Format: Device, Size, Used, Available, Usage %, Mount Point
-			deviceInfo := fmt.Sprintf("Device: %s\nSize: %s\nUsed: %s\nAvailable: %s\nUsage: %s\nMount: %s\n\n",
-				fields[0], fields[1], fields[2], fields[3], fields[4],
-				strings.Join(fields[5:], " "))
-			formattedOutput.WriteString(deviceInfo)
+		if len(fields) >= 6 {
+			// Format each line for better readability
+			device := fields[0]
+			if len(device) > 16 {
+				device = device[:13] + "..."
+			}
+
+			mountPoint := strings.Join(fields[5:], " ")
+			if len(mountPoint) > 20 {
+				mountPoint = mountPoint[:17] + "..."
+			}
+
+			formattedOutput.WriteString(fmt.Sprintf("%-16s %-8s %-8s %-8s %-6s %-s\n",
+				device, fields[1], fields[2], fields[3], fields[4], mountPoint))
 		}
 	}
 
 	labels.update("disk_info", formattedOutput.String())
 }
+
+// Helper functions for system information
 
 // executeCommand executes a command and returns its output
 func executeCommand(command string, args ...string) (string, error) {
@@ -813,3 +1124,4 @@ func formatBytes(bytes uint64) string {
 		return fmt.Sprintf("%d B", bytes)
 	}
 }
+
