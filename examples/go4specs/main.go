@@ -321,6 +321,7 @@ func createHardwarePanel() (*gtk4.Box, *labelMap, *labelMap, *labelMap) {
 	scrollWin := gtk4.NewScrolledWindow(
 		gtk4.WithHScrollbarPolicy(gtk4.ScrollbarPolicyNever),
 		gtk4.WithVScrollbarPolicy(gtk4.ScrollbarPolicyAutomatic),
+		gtk4.WithPropagateNaturalWidth(true), gtk4.WithPropagateNaturalHeight(true),
 	)
 
 	panel := gtk4.NewBox(gtk4.OrientationVertical, 16)
@@ -1124,4 +1125,3 @@ func formatBytes(bytes uint64) string {
 		return fmt.Sprintf("%d B", bytes)
 	}
 }
-
