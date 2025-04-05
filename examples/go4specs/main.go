@@ -1,8 +1,8 @@
 package main
 
 import (
-	"../../gtk4go"
-	"../gtk4"
+	"../../../gtk4go"
+	"../../gtk4"
 	"bufio"
 	"fmt"
 	"os"
@@ -813,4 +813,3 @@ func formatBytes(bytes uint64) string {
 		return fmt.Sprintf("%d B", bytes)
 	}
 }
-
