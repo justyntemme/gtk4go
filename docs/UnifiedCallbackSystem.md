@@ -1,72 +1,271 @@
-# Implementation of the Unified Callback System in GTK4Go
+# Unified Callback System (UCS) in GTK4Go
 
 ## Overview
 
-GTK4Go utilizes a unified callback system (UCS) to manage signals and events emitted by GTK widgets. This system is designed to provide a type-safe, thread-safe, and memory-safe way to connect Go functions to GTK signals. The core logic for the UCS is located in `gtk4/callbacks.go`.
+The Unified Callback System (UCS) is a core component of GTK4Go that provides a centralized, type-safe, and memory-safe way to handle GTK signal callbacks. This system solves several challenges when binding GTK4 (a C library) to Go:
+
+- **Thread safety**: Ensuring GTK UI operations run on the main thread
+- **Type safety**: Properly mapping different callback signatures between Go and C
+- **Memory management**: Preventing leaks by properly tracking and disconnecting signal handlers
+- **Context management**: Maintaining proper object and callback references
+
+The UCS allows Go developers to connect signals to callbacks using an idiomatic Go API while handling the complexities of C-Go interoperability behind the scenes.
+
+## Architecture
+
+The UCS is implemented primarily in `gtk4/callbacks.go` and consists of the following core components:
+
+### Core Components
+
+1. **CallbackManager**: Central manager that maintains maps for tracking callbacks, object handlers, and signal connections
+2. **Signal Registration**: Functions for connecting signals to callbacks and generating unique IDs
+3. **C-Side Handlers**: C callback functions that bridge GTK signals to Go callbacks
+4. **Thread-Safe Execution**: Mechanism to ensure callbacks run on the UI thread
+5. **Cleanup Handlers**: Functions to properly disconnect and clean up signal handlers
+
+### Key Data Structures
+
+- **callbacks**: Maps callback IDs to callback data
+- **objectHandlers**: Maps object pointers to lists of handler IDs
+- **objectCallbacks**: Maps object pointers to signal types to callbacks
 
 ## Implementation Details
 
-The UCS implementation revolves around a `CallbackManager` which contains the following:
+### Callback Registration Flow
 
-- `callbacks`: A `sync.Map` that stores callback data, mapping a unique callback ID to a `callbackData` struct. The `callbackData` contains the original Go callback function, the object's pointer, the signal type, and handler IDs for disconnection. This allows looking up the original Go callback function when a signal is emitted from the C side.
+1. A user calls `Connect(object, signal, callback)` on a widget
+2. The UCS:
+   - Generates a unique ID for the callback
+   - Analyzes the callback signature
+   - Stores callback data in the `callbacks` map
+   - Connects the appropriate C signal handler
+   - Tracks the handler for cleanup
 
-- `objectHandlers`: A `sync.Map` that stores a list of handler IDs associated with each object pointer. This allows efficient disconnection of all signal handlers for a specific widget when the widget is destroyed or no longer needed.
+### Signal Emission Flow
 
-- `objectCallbacks`: A `sync.Map` that stores callbacks associated with an object and signal type. This facilitates direct lookup of callbacks based on an object pointer and a signal type. It's used by some parts of the code to directly access a callback, for example, in the action implementation.
+1. GTK emits a signal
+2. The C callback handler receives the signal with the callback ID
+3. The handler looks up the Go callback in the `callbacks` map
+4. The callback is executed on the UI thread using `execCallback()`
 
-The key steps in using the UCS are:
+### Cleanup Process
 
-1.  **Connecting a Signal:**
+1. When `Disconnect()` or `DisconnectAll()` is called:
+   - The signal handler is disconnected using GTK's C API
+   - Callback references are removed from all maps
+   - Object handler tracking is updated
 
-    - The `Connect` function generates a unique ID for each callback using `nextCallbackID`.
-    - It retrieves the pointer to the GTK object using `getObjectPointer()`. This function handles various GTK object types, including widgets and adjustments.
-    - It creates a `callbackData` struct containing the callback, object pointer, and signal type.
-    - It stores the `callbackData` in the `callbacks` map, using the unique ID as the key.
-    - It uses `C.connectSignal()` to connect the GTK signal to a generic C callback handler (`callbackHandler`, `callbackHandlerWithParam`, or `callbackHandlerWithReturn`), passing the unique ID as user data. The C callback functions are simple bridges to the Go side.
-    - The ID is used in the C callback handler to look up the original Go callback.
-    - The callback is associated with the object using the `trackObjectHandler` function.
+## How Widgets Use the UCS
 
-2.  **Signal Emission:**
-
-    - When a GTK signal is emitted, the appropriate C callback handler is invoked.
-    - The C callback handler receives the unique callback ID as user data.
-    - The C callback handler looks up the `callbackData` in the `callbacks` map using the ID.
-    - The C callback handler retrieves the Go callback function from the `callbackData`.
-    - The C callback handler calls the Go callback function, wrapping in `execCallback()` function which safely execute a callback on the main UI thread using the `uithread` package's `RunOnUIThread` function.
-
-3.  **Disconnecting a Signal:**
-
-    - The `Disconnect` function retrieves the `callbackData` using the callback ID.
-    - It uses `C.disconnectSignal()` to disconnect the GTK signal handler using the `handlerID` which is stored in the callback data.
-    - It removes the `callbackData` from the `callbacks` map.
-    - It untracks the object handler with `untrackObjectHandler` function.
-
-4.  **Direct Callback Storing:**
-    - The `StoreDirectCallback` is used to bypass connecting a signal through the normal `Connect` function, but stores the callback directly for a given pointer. This is necessary for scenarios, such as actions, when the callback needs to be associated with a specific action pointer and the callback is not directly connected.
-
-## Why Application Doesn't Use the Unified Callback System Directly
-
-The `Application` struct in `gtk4/application.go` does not directly use the unified callback system for the `activate` signal. Instead, it uses a direct C callback (`activateCallback`).
+### Button
 
 ```go
-// Activate callback
-static void activateCallback(GtkApplication* app, gpointer user_data) {
-    ActivateData* data = (ActivateData*)user_data;
-    GtkWidget* window = (GtkWidget*)data->window;
-
-    // Set application
-    gtk_window_set_application(GTK_WINDOW(window), app);
-
-    // Show the window
-    gtk_widget_set_visible(window, TRUE);
+// ConnectClicked connects a callback function to the button's "clicked" signal
+func (b *Button) ConnectClicked(callback func()) {
+    Connect(b, SignalClicked, callback)
 }
 
-// Connect activate signal
-static void connect_activate(GtkApplication* app, GtkWidget* window) {
-    ActivateData* data = malloc(sizeof(ActivateData));
-    data->window = window;
-    data->app = app;
-
-    g_signal_connect(app, "activate", G_CALLBACK(activateCallback), data);
+// DisconnectClicked disconnects all clicked signal handlers
+func (b *Button) DisconnectClicked() {
+    DisconnectAll(b)
 }
 ```
+
+The Button widget uses UCS to handle its "clicked" signal. It provides a simple `ConnectClicked` method that wraps the UCS `Connect` function with the appropriate signal type. When the button is clicked, GTK emits the signal, and the UCS ensures the callback executes on the UI thread.
+
+### Entry
+
+```go
+// ConnectChanged connects a callback function to the entry's "changed" signal
+func (e *Entry) ConnectChanged(callback func()) {
+    Connect(e, SignalChanged, callback)
+}
+
+// ConnectActivate connects a callback function to the entry's "activate" signal
+func (e *Entry) ConnectActivate(callback func()) {
+    Connect(e, SignalActivate, callback)
+}
+```
+
+The Entry widget connects to both "changed" and "activate" signals, allowing callbacks when the text changes or when the user presses Enter. Both signals are managed through the UCS.
+
+### Window
+
+```go
+// ConnectCloseRequest connects a callback function to the window's "close-request" signal
+func (w *Window) ConnectCloseRequest(callback func() bool) uint64 {
+    return Connect(w, SignalCloseRequest, callback)
+}
+```
+
+The Window widget uses the UCS to handle window close requests. The callback returns a boolean value, which the UCS correctly handles using a specialized C handler that preserves the return value.
+
+### ListView
+
+```go
+// ConnectActivate connects a callback for item activation
+func (lv *ListView) ConnectActivate(callback ListViewActivateCallback) {
+    // Convert to a regular func(int) for the callback handler
+    standardCallback := func(position int) {
+        callback(position)
+    }
+    Connect(lv, SignalListActivate, standardCallback)
+}
+```
+
+ListView uses the UCS for its "activate" signal with a position parameter, demonstrating how UCS handles callbacks with parameters.
+
+### Dialog
+
+```go
+// ConnectResponse connects a response callback to the dialog
+func (d *Dialog) ConnectResponse(callback DialogResponseCallback) {
+    standardCallback := func(responseId ResponseType) {
+        callback(responseId)
+    }
+    // Use direct callback storage for dialog responses
+    dialogPtr := uintptr(unsafe.Pointer(d.widget))
+    StoreDirectCallback(dialogPtr, SignalDialogResponse, standardCallback)
+}
+```
+
+Dialogs use a special direct callback storage method within the UCS to handle response signals for buttons clicked in the dialog.
+
+### Adjustment
+
+```go
+// ConnectValueChanged connects a callback to the value-changed signal
+func (a *Adjustment) ConnectValueChanged(callback func()) {
+    Connect(a, SignalValueChanged, callback)
+}
+```
+
+The Adjustment widget connects to the "value-changed" signal to notify when its value changes.
+
+### ListItemFactory
+
+```go
+// ConnectSetup connects a callback for the setup signal
+func (f *SignalListItemFactory) ConnectSetup(callback ListItemCallback) {
+    Connect(f, SignalSetup, callback)
+}
+
+// ConnectBind connects a callback for the bind signal
+func (f *SignalListItemFactory) ConnectBind(callback ListItemCallback) {
+    Connect(f, SignalBind, callback)
+}
+```
+
+ListItemFactory uses the UCS to handle the complex lifecycle of list items, with specialized callbacks for setup, bind, unbind, and teardown phases.
+
+### SelectionModel
+
+```go
+// ConnectSelectionChanged connects a callback for selection changes
+func (m *BaseSelectionModel) ConnectSelectionChanged(callback SelectionChangedCallback) {
+    stdCallback := func(position, nItems int) {
+        callback(position, nItems)
+    }
+    modelPtr := uintptr(unsafe.Pointer(m.selectionModel))
+    handlerID := C.connectSelectionChanged(m.selectionModel, C.gpointer(unsafe.Pointer(m.selectionModel)))
+    StoreCallback(modelPtr, SignalSelectionChanged, stdCallback, handlerID)
+}
+```
+
+SelectionModel uses the UCS with a specialized storage method for handling selection changes.
+
+### Menu Components
+
+```go
+// ConnectDeactivate connects a callback for when the popover is closed
+func (pm *PopoverMenu) ConnectDeactivate(callback func()) {
+    Connect(pm, SignalDeactivate, callback)
+}
+```
+
+Menu components use the UCS to handle signals like deactivation when a menu is closed.
+
+### Action Components
+
+Actions use a specialized part of the UCS system with direct callback storage:
+
+```go
+// For Action activation
+actionPtr := uintptr(unsafe.Pointer(action))
+StoreDirectCallback(actionPtr, SignalActionActivate, standardCallback)
+```
+
+The UCS handles the unique requirements of action activation with direct pointer matching.
+
+## Advanced Features
+
+### Signal Sources and Disambiguation
+
+The UCS can handle signals with the same name from different sources by tracking the signal source:
+
+```go
+// Determine signal source based on object type and signal
+source := SourceGeneric
+if _, isListView := object.(*ListView); isListView && signal == SignalListActivate {
+    source = SourceListView
+} else if _, isAction := object.(*Action); isAction && signal == SignalActionActivate {
+    source = SourceAction
+}
+```
+
+This allows proper handling of "activate" signals from both ListView and Action components.
+
+### Memory Management
+
+The UCS automatically tracks handlers to ensure proper cleanup:
+
+```go
+// When a widget is destroyed
+func (w *Widget) Destroy() {
+    DisconnectAll(w) // Automatically disconnects all signals
+    // Continue with widget destruction
+}
+```
+
+This prevents memory leaks and dangling references.
+
+### Thread Safety
+
+The UCS ensures callbacks run on the UI thread using the `execCallback` function:
+
+```go
+// execCallback safely executes a callback on the main UI thread
+func execCallback(callback interface{}, args ...interface{}) {
+    uithread.RunOnUIThread(func() {
+        // Execute the callback based on its type
+        // ...
+    })
+}
+```
+
+This maintains GTK's thread safety requirements.
+
+## Best Practices
+
+1. **Always call DisconnectAll in Destroy methods**:
+   ```go
+   func (w *Widget) Destroy() {
+       DisconnectAll(w)
+       // Continue with destruction
+   }
+   ```
+
+2. **Return proper handler IDs**:
+   ```go
+   // Store and return the handler ID for manual disconnection
+   func ConnectSignal(callback func()) uint64 {
+       return Connect(widget, signal, callback)
+   }
+   ```
+
+3. **Use type-specific Connect methods**:
+   Provide widget-specific methods like `ConnectClicked` rather than asking users to directly use `Connect`.
+
+## Conclusion
+
+The Unified Callback System is a core component of GTK4Go that manages the complex task of bridging GTK signals to Go callbacks. It ensures thread safety, type safety, and memory safety while providing an idiomatic Go API. Understanding how it works helps developers use GTK4Go effectively and extend it with new widget types.
