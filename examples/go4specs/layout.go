@@ -5,6 +5,12 @@ import (
 	"fmt"
 )
 
+// Global variables for disk display
+var (
+    diskCard    *gtk4.Box     // Container for disk information
+    currentGrid *gtk4.Grid    // Current grid being displayed
+)
+
 // addInfoRow adds a row to an info grid with key/value pair
 func addInfoRow(grid *gtk4.Grid, row int, key string, value string, labels *labelMap, labelKey string) {
 	keyLabel := gtk4.NewLabel(key)
@@ -208,7 +214,7 @@ func createHardwarePanel() (*gtk4.Box, *labelMap, *labelMap, *labelMap, *labelMa
 	panel.Append(memoryCard)
 
 	// Create Disk info card
-	diskCard := gtk4.NewBox(gtk4.OrientationVertical, 8)
+	diskCard = gtk4.NewBox(gtk4.OrientationVertical, 8)
 	diskCard.AddCssClass("info-card")
 
 	// Disk Section Header
@@ -216,20 +222,47 @@ func createHardwarePanel() (*gtk4.Box, *labelMap, *labelMap, *labelMap, *labelMa
 	diskHeader.AddCssClass("card-title")
 	diskCard.Append(diskHeader)
 
-	// Create box for disk info
-	diskBox := gtk4.NewBox(gtk4.OrientationVertical, 8)
-	diskBox.AddCssClass("info-grid")
+	// Create initial grid for disk info
+	initialGrid := gtk4.NewGrid(
+		gtk4.WithRowSpacing(4),
+		gtk4.WithColumnSpacing(12),
+		gtk4.WithRowHomogeneous(false),
+	)
+	initialGrid.AddCssClass("disk-info-grid")
 
-	// Disk Storage Label (will contain formatted disk info)
-	diskInfoLabel := gtk4.NewLabel("")
-	diskInfoLabel.AddCssClass("disk-info")
-	diskBox.Append(diskInfoLabel)
+	// Add column headers to the grid
+	headerLabels := []string{"Device", "Size", "Used", "Avail", "Use%", "Mount Point"}
+	for i, header := range headerLabels {
+		label := gtk4.NewLabel(header)
+		label.AddCssClass("disk-header")
+		initialGrid.Attach(label, i, 0, 1, 1)
+	}
 
-	diskLabels := newLabelMap()
-	diskLabels.add("disk_info", diskInfoLabel)
+	// Add a separator row
+	for i := 0; i < len(headerLabels); i++ {
+		separator := gtk4.NewLabel("--------")
+		separator.AddCssClass("disk-separator")
+		initialGrid.Attach(separator, i, 1, 1, 1)
+	}
 
-	diskCard.Append(diskBox)
+	// Add a loading message
+	loadingLabel := gtk4.NewLabel("Loading disk information...")
+	loadingLabel.AddCssClass("disk-info-message")
+	initialGrid.Attach(loadingLabel, 0, 2, 6, 1)
+
+	// Set as current grid and add to card
+	currentGrid = initialGrid
+	diskCard.Append(currentGrid)
+
+	// Add card to panel
 	panel.Append(diskCard)
+
+	// Create disk labels map (for backward compatibility)
+	diskLabels := newLabelMap()
+    
+    // Add a placeholder label for text-based info (for backward compatibility)
+    placeholderLabel := gtk4.NewLabel("")
+    diskLabels.add("disk_info", placeholderLabel)
 
 	// Set the panel as the scrollable content
 	scrollWin.SetChild(panel)
