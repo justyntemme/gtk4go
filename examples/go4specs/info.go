@@ -93,18 +93,36 @@ func refreshAllData() {
 func refreshOSInfo(labels *labelMap) {
 	// Update OS Name
 	if osName, err := executeCommand("uname", "-s"); err == nil {
-		labels.update("os_name", strings.TrimSpace(osName))
+		text := strings.TrimSpace(osName)
+		labels.update("os_name", text)
+		
+		// Add tooltip for potentially long values
+		if label, ok := labels.labels["os_name"]; ok && len(text) > 20 {
+			label.SetTooltipText(text)
+		}
 	}
 
 	// Update Kernel Version
 	if kernelVersion, err := executeCommand("uname", "-r"); err == nil {
-		labels.update("kernel_version", strings.TrimSpace(kernelVersion))
+		text := strings.TrimSpace(kernelVersion)
+		labels.update("kernel_version", text)
+		
+		// Add tooltip for potentially long values
+		if label, ok := labels.labels["kernel_version"]; ok && len(text) > 20 {
+			label.SetTooltipText(text)
+		}
 	}
 
 	// Update Distribution
 	if fileExists("/etc/os-release") {
 		if dist, err := readDistribution(); err == nil {
-			labels.update("distribution", dist)
+			text := dist
+			labels.update("distribution", text)
+			
+			// Add tooltip for potentially long values
+			if label, ok := labels.labels["distribution"]; ok && len(text) > 20 {
+				label.SetTooltipText(text)
+			}
 		}
 	} else {
 		labels.update("distribution", "Unknown (os-release not found)")
@@ -112,27 +130,57 @@ func refreshOSInfo(labels *labelMap) {
 
 	// Update Architecture
 	if arch, err := executeCommand("uname", "-m"); err == nil {
-		labels.update("architecture", strings.TrimSpace(arch))
+		text := strings.TrimSpace(arch)
+		labels.update("architecture", text)
+		
+		// Add tooltip for potentially long values
+		if label, ok := labels.labels["architecture"]; ok && len(text) > 15 {
+			label.SetTooltipText(text)
+		}
 	}
 
 	// Update Hostname
 	if hostname, err := executeCommand("hostname"); err == nil {
-		labels.update("hostname", strings.TrimSpace(hostname))
+		text := strings.TrimSpace(hostname)
+		labels.update("hostname", text)
+		
+		// Add tooltip for potentially long values
+		if label, ok := labels.labels["hostname"]; ok && len(text) > 20 {
+			label.SetTooltipText(text)
+		}
 	}
 
 	// Update Uptime
 	if uptime, err := readUptime(); err == nil {
-		labels.update("uptime", uptime)
+		text := uptime
+		labels.update("uptime", text)
+		
+		// Add tooltip for potentially long values
+		if label, ok := labels.labels["uptime"]; ok && len(text) > 20 {
+			label.SetTooltipText(text)
+		}
 	}
 
 	// Update User
 	if user, err := executeCommand("whoami"); err == nil {
-		labels.update("user", strings.TrimSpace(user))
+		text := strings.TrimSpace(user)
+		labels.update("user", text)
+		
+		// Add tooltip for potentially long values
+		if label, ok := labels.labels["user"]; ok && len(text) > 15 {
+			label.SetTooltipText(text)
+		}
 	}
 
 	// Update Shell
 	if shell, ok := os.LookupEnv("SHELL"); ok {
-		labels.update("shell", shell)
+		text := shell
+		labels.update("shell", text)
+		
+		// Add tooltip for potentially long values
+		if label, ok := labels.labels["shell"]; ok && len(text) > 20 {
+			label.SetTooltipText(text)
+		}
 	}
 }
 
@@ -140,7 +188,13 @@ func refreshOSInfo(labels *labelMap) {
 func refreshCPUInfo(labels *labelMap) {
 	// Update CPU Model
 	if model, err := readCPUModel(); err == nil {
-		labels.update("cpu_model", model)
+		text := model
+		labels.update("cpu_model", text)
+		
+		// CPU model strings are often very long, always add tooltip
+		if label, ok := labels.labels["cpu_model"]; ok {
+			label.SetTooltipText(text)
+		}
 	}
 
 	// Update CPU Cores and Threads
@@ -150,7 +204,13 @@ func refreshCPUInfo(labels *labelMap) {
 
 	// Update CPU Frequency
 	if freq, err := readCPUFrequency(); err == nil {
-		labels.update("cpu_freq", freq)
+		text := freq
+		labels.update("cpu_freq", text)
+		
+		// Add tooltip for potentially long values
+		if label, ok := labels.labels["cpu_freq"]; ok && len(text) > 15 {
+			label.SetTooltipText(text)
+		}
 	}
 
 	// Update CPU Usage
@@ -181,7 +241,13 @@ func refreshGPUInfo(labels *labelMap) {
 				parts := strings.SplitN(lines[0], ":", 2)
 				if len(parts) >= 2 {
 					model := strings.TrimSpace(parts[1])
-					labels.update("gpu_model", truncateText(model, 35))
+					displayText := truncateText(model, 35)
+					labels.update("gpu_model", displayText)
+					
+					// Always add tooltip for GPU model as they're typically long
+					if label, ok := labels.labels["gpu_model"]; ok && len(model) > 35 {
+						label.SetTooltipText(model) // Show full text in tooltip
+					}
 				}
 			}
 		} else {
@@ -199,7 +265,13 @@ func refreshGPUInfo(labels *labelMap) {
 			parts := strings.SplitN(vendor, ":", 2)
 			if len(parts) >= 2 {
 				vendorText := strings.TrimSpace(parts[1])
-				labels.update("gpu_vendor", truncateText(vendorText, 30))
+				displayText := truncateText(vendorText, 30)
+				labels.update("gpu_vendor", displayText)
+				
+				// Add tooltip for full text if truncated
+				if label, ok := labels.labels["gpu_vendor"]; ok && len(vendorText) > 30 {
+					label.SetTooltipText(vendorText)
+				}
 			}
 		}
 
@@ -209,7 +281,13 @@ func refreshGPUInfo(labels *labelMap) {
 			parts := strings.SplitN(renderer, ":", 2)
 			if len(parts) >= 2 {
 				rendererText := strings.TrimSpace(parts[1])
-				labels.update("gpu_renderer", truncateText(rendererText, 30))
+				displayText := truncateText(rendererText, 30)
+				labels.update("gpu_renderer", displayText)
+				
+				// Add tooltip for full text if truncated
+				if label, ok := labels.labels["gpu_renderer"]; ok && len(rendererText) > 30 {
+					label.SetTooltipText(rendererText)
+				}
 			}
 		}
 
@@ -219,7 +297,13 @@ func refreshGPUInfo(labels *labelMap) {
 			parts := strings.SplitN(version, ":", 2)
 			if len(parts) >= 2 {
 				versionText := strings.TrimSpace(parts[1])
-				labels.update("gpu_gl_version", truncateText(versionText, 30))
+				displayText := truncateText(versionText, 30)
+				labels.update("gpu_gl_version", displayText)
+				
+				// Add tooltip for full text if truncated
+				if label, ok := labels.labels["gpu_gl_version"]; ok && len(versionText) > 30 {
+					label.SetTooltipText(versionText)
+				}
 			}
 		}
 	} else {
@@ -236,9 +320,24 @@ func refreshGPUInfo(labels *labelMap) {
 				memoryText := strings.TrimSpace(parts[2])
 				utilizationText := strings.TrimSpace(parts[3])
 				
-				labels.update("gpu_driver", truncateText(driverText, 30))
-				labels.update("gpu_memory", truncateText(memoryText, 30))
-				labels.update("gpu_utilization", truncateText(utilizationText, 30))
+				displayDriver := truncateText(driverText, 30)
+				displayMemory := truncateText(memoryText, 30)
+				displayUtil := truncateText(utilizationText, 30)
+				
+				labels.update("gpu_driver", displayDriver)
+				labels.update("gpu_memory", displayMemory)
+				labels.update("gpu_utilization", displayUtil)
+				
+				// Add tooltips for truncated values
+				if label, ok := labels.labels["gpu_driver"]; ok && len(driverText) > 30 {
+					label.SetTooltipText(driverText)
+				}
+				if label, ok := labels.labels["gpu_memory"]; ok && len(memoryText) > 30 {
+					label.SetTooltipText(memoryText)
+				}
+				if label, ok := labels.labels["gpu_utilization"]; ok && len(utilizationText) > 30 {
+					label.SetTooltipText(utilizationText)
+				}
 			}
 		}
 	} else {
@@ -249,7 +348,13 @@ func refreshGPUInfo(labels *labelMap) {
 				parts := strings.SplitN(driver, ":", 2)
 				if len(parts) >= 2 {
 					driverText := strings.TrimSpace(parts[1])
-					labels.update("gpu_driver", truncateText(driverText, 30))
+					displayText := truncateText(driverText, 30)
+					labels.update("gpu_driver", displayText)
+					
+					// Add tooltip for full text if truncated
+					if label, ok := labels.labels["gpu_driver"]; ok && len(driverText) > 30 {
+						label.SetTooltipText(driverText)
+					}
 				}
 			}
 		} else {
@@ -307,7 +412,7 @@ func refreshDiskInfo(labels *labelMap) {
 
 				fields := strings.Fields(line)
 				if len(fields) >= 6 {
-					// Add this disk entry to the grid
+					// Add this disk entry to the grid with tooltips
 					addDiskRowToGrid(grid, rowIndex, fields)
 					rowIndex++
 				}
@@ -378,30 +483,41 @@ func createDiskGridWithHeaders() *gtk4.Grid {
 	return grid
 }
 
-// addDiskRowToGrid adds a row of disk information to the grid
+// addDiskRowToGrid adds a row of disk information to the grid with tooltips for truncated values
 func addDiskRowToGrid(grid *gtk4.Grid, rowIndex int, fields []string) {
-	// Create a label for each field and add it to the grid
+	// Create device label with potential tooltip
 	device := fields[0]
-	if len(device) > 16 {
-		device = device[:13] + "..."
-	}
-
 	deviceLabel := gtk4.NewLabel(device)
 	deviceLabel.AddCssClass("disk-device")
+	
+	// Add tooltip if device name is long
+	if len(device) > 16 {
+		// Store full device name before truncating for display
+		fullDevice := device
+		// Truncate displayed text
+		deviceLabel.SetText(device[:13] + "...")
+		// Add tooltip with full device name
+		deviceLabel.SetTooltipText(fullDevice)
+	}
+	
 	grid.Attach(deviceLabel, 0, rowIndex, 1, 1)
 
+	// Size column
 	sizeLabel := gtk4.NewLabel(fields[1])
 	sizeLabel.AddCssClass("disk-size")
 	grid.Attach(sizeLabel, 1, rowIndex, 1, 1)
 
+	// Used column
 	usedLabel := gtk4.NewLabel(fields[2])
 	usedLabel.AddCssClass("disk-used")
 	grid.Attach(usedLabel, 2, rowIndex, 1, 1)
 
+	// Available column
 	availLabel := gtk4.NewLabel(fields[3])
 	availLabel.AddCssClass("disk-avail")
 	grid.Attach(availLabel, 3, rowIndex, 1, 1)
 
+	// Percent column with color coding
 	percentLabel := gtk4.NewLabel(fields[4])
 	percentLabel.AddCssClass("disk-percent")
 
@@ -419,12 +535,21 @@ func addDiskRowToGrid(grid *gtk4.Grid, rowIndex int, fields []string) {
 
 	grid.Attach(percentLabel, 4, rowIndex, 1, 1)
 
+	// Mount point column with potential tooltip
 	mountPoint := strings.Join(fields[5:], " ")
-	if len(mountPoint) > 20 {
-		mountPoint = mountPoint[:17] + "..."
-	}
 	mountLabel := gtk4.NewLabel(mountPoint)
 	mountLabel.AddCssClass("disk-mount")
+	
+	// Add tooltip if mount path is long
+	if len(mountPoint) > 20 {
+		// Store full path
+		fullMount := mountPoint
+		// Truncate displayed text
+		mountLabel.SetText(mountPoint[:17] + "...")
+		// Add tooltip with full path
+		mountLabel.SetTooltipText(fullMount)
+	}
+	
 	grid.Attach(mountLabel, 5, rowIndex, 1, 1)
 }
 

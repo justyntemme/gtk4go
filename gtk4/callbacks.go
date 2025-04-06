@@ -10,6 +10,7 @@ package gtk4
 // extern void callbackHandler(GObject *object, gpointer data);
 // extern void callbackHandlerWithParam(GObject *object, gpointer param, gpointer data);
 // extern gboolean callbackHandlerWithReturn(GObject *object, gpointer data);
+// extern gboolean tooltipQueryCallback(GtkWidget *widget, gint x, gint y, gboolean keyboard_mode, GtkTooltip *tooltip, gpointer user_data);
 //
 // // Generic function to connect a signal to a handler
 // static gulong connectSignal(GObject *object, const char *signal, gboolean hasParam, gboolean hasReturn, guint callbackId) {
@@ -20,6 +21,11 @@ package gtk4
 //     } else {
 //         return g_signal_connect(object, signal, G_CALLBACK(callbackHandler), GUINT_TO_POINTER(callbackId));
 //     }
+// }
+//
+// // Connect tooltip query signal specifically
+// static gulong connectTooltipQuery(GtkWidget *widget, guint callbackId) {
+//     return g_signal_connect(widget, "query-tooltip", G_CALLBACK(tooltipQueryCallback), GUINT_TO_POINTER(callbackId));
 // }
 //
 // // Function to disconnect a signal
@@ -86,7 +92,13 @@ const (
 
 	// Action signals - same name as list signal but different context
 	SignalActionActivate SignalType = "activate"
+	
+	// Tooltip signals
+	SignalQueryTooltip SignalType = "query-tooltip"
 )
+
+// Import debug components defined in debug.go
+// Only defining SignalQueryTooltip here since it's related to callbacks
 
 // nextCallbackID is a counter for generating unique callback IDs
 var nextCallbackID atomic.Uint64
@@ -164,14 +176,20 @@ func Connect(object interface{}, signal SignalType, callback interface{}) (handl
 	cSignal := C.CString(string(signal))
 	defer C.free(unsafe.Pointer(cSignal))
 
-	// Connect and get handler ID
-	handlerId := C.connectSignal(
-		cObject,
-		cSignal,
-		boolToGBoolean(hasParam),
-		boolToGBoolean(hasReturn),
-		C.guint(id),
-	)
+	// Connect and get handler ID - special case for tooltip query signal
+	var handlerId C.gulong
+	if signal == SignalQueryTooltip {
+		handlerId = C.connectTooltipQuery((*C.GtkWidget)(unsafe.Pointer(objectPtr)), C.guint(id))
+	} else {
+		// Connect regular signal
+		handlerId = C.connectSignal(
+			cObject,
+			cSignal,
+			boolToGBoolean(hasParam),
+			boolToGBoolean(hasReturn),
+			C.guint(id),
+		)
+	}
 
 	// Store the handler ID in the callback data
 	data.handlerID = handlerId
@@ -384,6 +402,11 @@ func analyzeCallbackSignature(callback interface{}) (hasParam bool, hasReturn bo
 	// Check if it has a return value
 	hasReturn = callbackType.NumOut() > 0
 
+	// Special case for tooltips which return a boolean
+	if callbackType.NumOut() > 0 && callbackType.Out(0).Kind() == reflect.Bool {
+		hasReturn = true
+	}
+
 	return hasParam, hasReturn
 }
 
@@ -489,6 +512,31 @@ func execCallback(callback interface{}, args ...interface{}) {
 				} else {
 					DebugLog(DebugLevelError, DebugComponentCallback, 
 						"func(*ListItem) called with invalid argument type: %T, expected *ListItem", args[0])
+				}
+			}
+		// Support for tooltip query callbacks
+		case func(int, int, bool, uintptr) bool:
+			if len(args) >= 4 {
+				if x, ok1 := args[0].(int); ok1 {
+					if y, ok2 := args[1].(int); ok2 {
+						if keyboard, ok3 := args[2].(bool); ok3 {
+							if tooltipPtr, ok4 := args[3].(uintptr); ok4 {
+								cb(x, y, keyboard, tooltipPtr)
+							}
+						}
+					}
+				}
+			}
+		case func(int, int, bool, *Tooltip) bool:
+			if len(args) >= 4 {
+				if x, ok1 := args[0].(int); ok1 {
+					if y, ok2 := args[1].(int); ok2 {
+						if keyboard, ok3 := args[2].(bool); ok3 {
+							if tooltip, ok4 := args[3].(*Tooltip); ok4 {
+								cb(x, y, keyboard, tooltip)
+							}
+						}
+					}
 				}
 			}
 		default:
@@ -660,6 +708,61 @@ func callbackHandlerWithReturn(object *C.GObject, data C.gpointer) C.gboolean {
 	}
 
 	return C.FALSE
+}
+
+//export tooltipQueryCallback
+func tooltipQueryCallback(widget *C.GtkWidget, x C.gint, y C.gint, keyboardMode C.gboolean, tooltip *C.GtkTooltip, userData C.gpointer) C.gboolean {
+	// Convert userData to callback ID
+	id := uint64(uintptr(userData))
+	
+	// Find the callback data
+	value, ok := globalCallbackManager.callbacks.Load(id)
+	if !ok {
+		DebugLog(DebugLevelWarning, DebugComponentTooltip, 
+			"tooltipQueryCallback: callback ID %d not found", id)
+		// Default to showing the tooltip
+		return C.TRUE
+	}
+	
+	callbackData := value.(*callbackData)
+	DebugLog(DebugLevelVerbose, DebugComponentTooltip, 
+		"tooltipQueryCallback: executing callback ID %d for signal %s", id, callbackData.signal)
+	
+	// Check for the appropriate callback type (for the UCS)
+	if callback, ok := callbackData.callback.(func(int, int, bool, uintptr) bool); ok {
+		// Execute the callback directly as we need the return value
+		result := callback(
+			int(x),
+			int(y),
+			keyboardMode == C.TRUE,
+			uintptr(unsafe.Pointer(tooltip)),
+		)
+		
+		if result {
+			return C.TRUE
+		}
+		return C.FALSE
+	} else if callback, ok := callbackData.callback.(func(int, int, bool, *Tooltip) bool); ok {
+		// Create a Tooltip wrapper and call the callback
+		tooltipObj := &Tooltip{tooltip: tooltip}
+		result := callback(
+			int(x),
+			int(y),
+			keyboardMode == C.TRUE,
+			tooltipObj,
+		)
+		
+		if result {
+			return C.TRUE
+		}
+		return C.FALSE
+	} else {
+		DebugLog(DebugLevelError, DebugComponentTooltip, 
+			"tooltipQueryCallback: callback has wrong type: %T", callbackData.callback)
+	}
+	
+	// Default to showing the tooltip
+	return C.TRUE
 }
 
 // Initialize the callback system
