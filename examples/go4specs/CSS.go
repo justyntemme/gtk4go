@@ -1,14 +1,11 @@
 package main
 
 import (
-	"../../gtk4"
+	"../../gtk4/"
 	"fmt"
 )
 
-func testing() {
-	fmt.Println("hello")
-}
-
+// loadAppStyles loads the CSS styles for the application
 func loadAppStyles() error {
 	cssProvider, err := gtk4.LoadCSS(`
 		/* Base application styling */
@@ -265,42 +262,6 @@ func loadAppStyles() error {
 			color: #bbbbbb;
 			font-size: 12px;
 		}
-		
-		/* ======== TAB STYLING (STACK SWITCHER) ======== */
-		stackswitcher {
-			background-color: transparent;
-			padding: 4px;
-		}
-		
-		/* Direct styling for stack switcher buttons */
-		stackswitcher button {
-			background-color: transparent;
-			border-radius: 4px;
-			padding: 8px 12px;
-			margin: 0 2px;
-			border: none;
-			border-bottom: 3px solid transparent;
-		}
-		
-		stackswitcher button label {
-			color: #505050;
-		}
-		
-		stackswitcher button:hover {
-			background-color: rgba(0, 0, 0, 0.05);
-		}
-		
-		stackswitcher button:checked,
-		stackswitcher button:active {
-			background-color: transparent;
-			border-bottom: 3px solid #3584e4;
-		}
-		
-		stackswitcher button:checked label,
-		stackswitcher button:active label {
-			color: #303030;
-			font-weight: bold;
-		}
 	`)
 
 	if err != nil {
@@ -310,4 +271,8 @@ func loadAppStyles() error {
 		gtk4.AddProviderForDisplay(cssProvider, 600)
 	}
 	return nil
+}
+
+func testing() {
+	fmt.Println("hello")
 }
