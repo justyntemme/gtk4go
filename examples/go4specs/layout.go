@@ -104,30 +104,64 @@ func createHardwarePanel() (*gtk4.Box, *labelMap, *labelMap, *labelMap, *labelMa
 	cpuHeader.AddCssClass("card-title")
 	cpuCard.Append(cpuHeader)
 
-	// CPU Grid
+	// CPU Grid - horizontal grid with equal column spacing
 	cpuGrid := gtk4.NewGrid(
-		gtk4.WithRowSpacing(8),
-		gtk4.WithColumnSpacing(24),
+		gtk4.WithRowSpacing(4),
+		gtk4.WithColumnSpacing(12),
 		gtk4.WithRowHomogeneous(false),
+		gtk4.WithColumnHomogeneous(true), // Make columns equal width
 	)
-	cpuGrid.AddCssClass("info-grid")
+	cpuGrid.AddCssClass("disk-info-grid")
 
 	cpuLabels := newLabelMap()
 
-	// CPU Model
-	addInfoRow(cpuGrid, 0, "CPU Model:", "", cpuLabels, "cpu_model")
-
-	// CPU Cores
-	addInfoRow(cpuGrid, 1, "CPU Cores:", "", cpuLabels, "cpu_cores")
-
-	// CPU Threads
-	addInfoRow(cpuGrid, 2, "CPU Threads:", "", cpuLabels, "cpu_threads")
-
-	// CPU Frequency
-	addInfoRow(cpuGrid, 3, "CPU Frequency:", "", cpuLabels, "cpu_freq")
-
-	// CPU Usage
-	addInfoRow(cpuGrid, 4, "CPU Usage:", "", cpuLabels, "cpu_usage")
+	// Create column headers similar to disk/memory sections
+	cpuHeaders := []string{"CPU Model", "CPU Cores", "CPU Threads", "CPU Frequency", "CPU Usage"}
+	
+	// Add headers to the grid with consistent styling
+	for i, header := range cpuHeaders {
+		label := gtk4.NewLabel(header)
+		label.AddCssClass("disk-header")
+		cpuGrid.Attach(label, i, 0, 1, 1)
+	}
+	
+	// Add a separator row like in other sections
+	for i := 0; i < len(cpuHeaders); i++ {
+		separator := gtk4.NewLabel("--------")
+		separator.AddCssClass("disk-separator")
+		cpuGrid.Attach(separator, i, 1, 1, 1)
+	}
+	
+	// Create value labels for the second row and add to label map
+	// CPU Model - Column 0
+	cpuModelValue := gtk4.NewLabel("")
+	cpuModelValue.AddCssClass("disk-device") // Using disk-device for model name styling
+	cpuGrid.Attach(cpuModelValue, 0, 2, 1, 1)
+	cpuLabels.add("cpu_model", cpuModelValue)
+	
+	// CPU Cores - Column 1
+	cpuCoresValue := gtk4.NewLabel("")
+	cpuCoresValue.AddCssClass("disk-size")
+	cpuGrid.Attach(cpuCoresValue, 1, 2, 1, 1)
+	cpuLabels.add("cpu_cores", cpuCoresValue)
+	
+	// CPU Threads - Column 2
+	cpuThreadsValue := gtk4.NewLabel("")
+	cpuThreadsValue.AddCssClass("disk-size")
+	cpuGrid.Attach(cpuThreadsValue, 2, 2, 1, 1)
+	cpuLabels.add("cpu_threads", cpuThreadsValue)
+	
+	// CPU Frequency - Column 3
+	cpuFreqValue := gtk4.NewLabel("")
+	cpuFreqValue.AddCssClass("disk-avail")
+	cpuGrid.Attach(cpuFreqValue, 3, 2, 1, 1)
+	cpuLabels.add("cpu_freq", cpuFreqValue)
+	
+	// CPU Usage - Column 4
+	cpuUsageValue := gtk4.NewLabel("")
+	cpuUsageValue.AddCssClass("disk-percent")
+	cpuGrid.Attach(cpuUsageValue, 4, 2, 1, 1)
+	cpuLabels.add("cpu_usage", cpuUsageValue)
 
 	cpuCard.Append(cpuGrid)
 	panel.Append(cpuCard)
@@ -141,24 +175,24 @@ func createHardwarePanel() (*gtk4.Box, *labelMap, *labelMap, *labelMap, *labelMa
 	gpuHeader.AddCssClass("card-title")
 	gpuCard.Append(gpuHeader)
 
-	// GPU Grid
+	// GPU Grid - keep existing vertical layout but ensure consistent styling
 	gpuGrid := gtk4.NewGrid(
-		gtk4.WithRowSpacing(4),     // Match disk grid spacing
-		gtk4.WithColumnSpacing(12), // Match disk grid spacing
+		gtk4.WithRowSpacing(4),     
+		gtk4.WithColumnSpacing(12), 
 		gtk4.WithRowHomogeneous(false),
 	)
 	gpuGrid.AddCssClass("disk-info-grid")
 
 	// Add headers
-	headerLabels := []string{"Property", "Value"}
-	for i, header := range headerLabels {
+	gpuHeaders := []string{"Property", "Value"}
+	for i, header := range gpuHeaders {
 		label := gtk4.NewLabel(header)
 		label.AddCssClass("disk-header")
 		gpuGrid.Attach(label, i, 0, 1, 1)
 	}
 
 	// Add a separator row
-	for i := 0; i < len(headerLabels); i++ {
+	for i := 0; i < len(gpuHeaders); i++ {
 		separator := gtk4.NewLabel("--------")
 		separator.AddCssClass("disk-separator")
 		gpuGrid.Attach(separator, i, 1, 1, 1)
@@ -206,17 +240,17 @@ func createHardwarePanel() (*gtk4.Box, *labelMap, *labelMap, *labelMap, *labelMa
 	memoryLabels := newLabelMap()
 
 	// Create column headers similar to disk section
-	headerLabels = []string{"Total RAM", "Used RAM", "Free RAM", "RAM Usage", "Swap Total", "Swap Used"}
+	memHeaders := []string{"Total RAM", "Used RAM", "Free RAM", "RAM Usage", "Swap Total", "Swap Used"}
 	
 	// Add headers to the grid with consistent styling
-	for i, header := range headerLabels {
+	for i, header := range memHeaders {
 		label := gtk4.NewLabel(header)
 		label.AddCssClass("disk-header")
 		memoryGrid.Attach(label, i, 0, 1, 1)
 	}
 	
 	// Add a separator row like in the disk section
-	for i := 0; i < len(headerLabels); i++ {
+	for i := 0; i < len(memHeaders); i++ {
 		separator := gtk4.NewLabel("--------")
 		separator.AddCssClass("disk-separator")
 		memoryGrid.Attach(separator, i, 1, 1, 1)
@@ -281,15 +315,15 @@ func createHardwarePanel() (*gtk4.Box, *labelMap, *labelMap, *labelMap, *labelMa
 	initialGrid.AddCssClass("disk-info-grid")
 
 	// Add column headers to the grid
-	headerLabels = []string{"Device", "Size", "Used", "Avail", "Use%", "Mount Point"}
-	for i, header := range headerLabels {
+	diskHeaders := []string{"Device", "Size", "Used", "Avail", "Use%", "Mount Point"}
+	for i, header := range diskHeaders {
 		label := gtk4.NewLabel(header)
 		label.AddCssClass("disk-header")
 		initialGrid.Attach(label, i, 0, 1, 1)
 	}
 
 	// Add a separator row
-	for i := 0; i < len(headerLabels); i++ {
+	for i := 0; i < len(diskHeaders); i++ {
 		separator := gtk4.NewLabel("--------")
 		separator.AddCssClass("disk-separator")
 		initialGrid.Attach(separator, i, 1, 1, 1)
