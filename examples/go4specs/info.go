@@ -95,7 +95,7 @@ func refreshOSInfo(labels *labelMap) {
 	if osName, err := executeCommand("uname", "-s"); err == nil {
 		text := strings.TrimSpace(osName)
 		labels.update("os_name", text)
-		
+
 		// Add tooltip for potentially long values
 		if label, ok := labels.labels["os_name"]; ok && len(text) > 20 {
 			label.SetTooltipText(text)
@@ -106,7 +106,7 @@ func refreshOSInfo(labels *labelMap) {
 	if kernelVersion, err := executeCommand("uname", "-r"); err == nil {
 		text := strings.TrimSpace(kernelVersion)
 		labels.update("kernel_version", text)
-		
+
 		// Add tooltip for potentially long values
 		if label, ok := labels.labels["kernel_version"]; ok && len(text) > 20 {
 			label.SetTooltipText(text)
@@ -118,7 +118,7 @@ func refreshOSInfo(labels *labelMap) {
 		if dist, err := readDistribution(); err == nil {
 			text := dist
 			labels.update("distribution", text)
-			
+
 			// Add tooltip for potentially long values
 			if label, ok := labels.labels["distribution"]; ok && len(text) > 20 {
 				label.SetTooltipText(text)
@@ -132,7 +132,7 @@ func refreshOSInfo(labels *labelMap) {
 	if arch, err := executeCommand("uname", "-m"); err == nil {
 		text := strings.TrimSpace(arch)
 		labels.update("architecture", text)
-		
+
 		// Add tooltip for potentially long values
 		if label, ok := labels.labels["architecture"]; ok && len(text) > 15 {
 			label.SetTooltipText(text)
@@ -143,7 +143,7 @@ func refreshOSInfo(labels *labelMap) {
 	if hostname, err := executeCommand("hostname"); err == nil {
 		text := strings.TrimSpace(hostname)
 		labels.update("hostname", text)
-		
+
 		// Add tooltip for potentially long values
 		if label, ok := labels.labels["hostname"]; ok && len(text) > 20 {
 			label.SetTooltipText(text)
@@ -154,7 +154,7 @@ func refreshOSInfo(labels *labelMap) {
 	if uptime, err := readUptime(); err == nil {
 		text := uptime
 		labels.update("uptime", text)
-		
+
 		// Add tooltip for potentially long values
 		if label, ok := labels.labels["uptime"]; ok && len(text) > 20 {
 			label.SetTooltipText(text)
@@ -165,7 +165,7 @@ func refreshOSInfo(labels *labelMap) {
 	if user, err := executeCommand("whoami"); err == nil {
 		text := strings.TrimSpace(user)
 		labels.update("user", text)
-		
+
 		// Add tooltip for potentially long values
 		if label, ok := labels.labels["user"]; ok && len(text) > 15 {
 			label.SetTooltipText(text)
@@ -176,7 +176,7 @@ func refreshOSInfo(labels *labelMap) {
 	if shell, ok := os.LookupEnv("SHELL"); ok {
 		text := shell
 		labels.update("shell", text)
-		
+
 		// Add tooltip for potentially long values
 		if label, ok := labels.labels["shell"]; ok && len(text) > 20 {
 			label.SetTooltipText(text)
@@ -190,7 +190,7 @@ func refreshCPUInfo(labels *labelMap) {
 	if model, err := readCPUModel(); err == nil {
 		text := model
 		labels.update("cpu_model", text)
-		
+
 		// CPU model strings are often very long, always add tooltip
 		if label, ok := labels.labels["cpu_model"]; ok {
 			label.SetTooltipText(text)
@@ -206,7 +206,7 @@ func refreshCPUInfo(labels *labelMap) {
 	if freq, err := readCPUFrequency(); err == nil {
 		text := freq
 		labels.update("cpu_freq", text)
-		
+
 		// Add tooltip for potentially long values
 		if label, ok := labels.labels["cpu_freq"]; ok && len(text) > 15 {
 			label.SetTooltipText(text)
@@ -229,69 +229,194 @@ func refreshGPUInfo(labels *labelMap) {
 		return text
 	}
 
-	// Try to get GPU information using lspci
-	if _, err := executeCommand("which", "lspci"); err == nil {
-		// Extract GPU info using grep
-		gpuLines, err := executeCommand("bash", "-c", "lspci | grep -i 'vga\\|3d\\|2d'")
-		if err == nil && len(gpuLines) > 0 {
-			// Set primary GPU model
-			lines := strings.Split(gpuLines, "\n")
-			if len(lines) > 0 {
-				// Extract GPU name from the first line
-				parts := strings.SplitN(lines[0], ":", 2)
-				if len(parts) >= 2 {
-					model := strings.TrimSpace(parts[1])
-					displayText := truncateText(model, 35)
-					labels.update("gpu_model", displayText)
-					
-					// Always add tooltip for GPU model as they're typically long
-					if label, ok := labels.labels["gpu_model"]; ok && len(model) > 35 {
-						label.SetTooltipText(model) // Show full text in tooltip
+	// First try to use lshw to get GPU information
+	lshwSuccess := false
+	if _, err := executeCommand("which", "lshw"); err == nil {
+		// Run lshw to get display information
+		lshwOutput, err := executeCommand("lshw", "-C", "Display")
+		if err == nil && len(lshwOutput) > 0 {
+			// Parse the lshw output
+			lines := strings.Split(lshwOutput, "\n")
+
+			// Variables to store extracted information
+			var product, vendor, driver, resolution, memory string
+
+			// Parse each line for relevant information
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+
+				if strings.Contains(line, "product:") && len(strings.Split(line, "product:")) > 1 {
+					product = strings.TrimSpace(strings.Split(line, "product:")[1])
+				} else if strings.Contains(line, "vendor:") && len(strings.Split(line, "vendor:")) > 1 {
+					vendor = strings.TrimSpace(strings.Split(line, "vendor:")[1])
+				} else if strings.Contains(line, "configuration:") && len(strings.Split(line, "configuration:")) > 1 {
+					config := strings.TrimSpace(strings.Split(line, "configuration:")[1])
+
+					// Extract driver and resolution from configuration
+					configParts := strings.Split(config, " ")
+					for _, part := range configParts {
+						if strings.HasPrefix(part, "driver=") {
+							driver = strings.TrimPrefix(part, "driver=")
+						} else if strings.HasPrefix(part, "resolution=") {
+							resolution = strings.TrimPrefix(part, "resolution=")
+						}
+					}
+				} else if strings.Contains(line, "memory:") && len(strings.Split(line, "memory:")) > 1 {
+					// Just take the first memory entry as an indication
+					if memory == "" {
+						parts := strings.Split(line, "memory:")
+						memory = strings.TrimSpace(parts[1])
+						// Cut off at first space if there are multiple entries
+						if spaceIdx := strings.Index(memory, " "); spaceIdx != -1 {
+							memory = memory[:spaceIdx]
+						}
 					}
 				}
 			}
-		} else {
-			labels.update("gpu_model", "No dedicated GPU detected")
+
+			// Update labels with the information we found
+			if product != "" {
+				displayText := truncateText(product, 35)
+				labels.update("gpu_model", displayText)
+
+				// Add tooltip for full text if truncated
+				if label, ok := labels.labels["gpu_model"]; ok && len(product) > 35 {
+					label.SetTooltipText(product)
+				}
+
+				lshwSuccess = true
+			}
+
+			if vendor != "" {
+				displayText := truncateText(vendor, 30)
+				labels.update("gpu_vendor", displayText)
+
+				// Add tooltip for full text if truncated
+				if label, ok := labels.labels["gpu_vendor"]; ok && len(vendor) > 30 {
+					label.SetTooltipText(vendor)
+				}
+			}
+
+			if driver != "" {
+				displayText := truncateText(driver, 30)
+				labels.update("gpu_driver", displayText)
+
+				// Add tooltip for full text if truncated
+				if label, ok := labels.labels["gpu_driver"]; ok && len(driver) > 30 {
+					label.SetTooltipText(driver)
+				}
+			}
+
+			// If we have resolution information, use it for renderer
+			if resolution != "" {
+				displayText := truncateText("Resolution: "+resolution, 30)
+				labels.update("gpu_renderer", displayText)
+
+				// Add tooltip for full text if truncated
+				if label, ok := labels.labels["gpu_renderer"]; ok && len(resolution) > 25 {
+					label.SetTooltipText("Resolution: " + resolution)
+				}
+			}
+
+			// Try to use memory information if available
+			if memory != "" {
+				displayText := truncateText("Memory: "+memory, 30)
+				labels.update("gpu_memory", displayText)
+
+				// Add tooltip for full text if truncated
+				if label, ok := labels.labels["gpu_memory"]; ok && len(memory) > 25 {
+					label.SetTooltipText("Memory: " + memory)
+				}
+			}
 		}
-	} else {
-		labels.update("gpu_model", "GPU detection not available (lspci not found)")
+	}
+
+	// Check which labels we need to populate with fallback methods
+	// Only use fallback methods for GPU model if lshw wasn't successful
+	modelLabel, hasModel := labels.labels["gpu_model"]
+	modelEmpty := (!hasModel || modelLabel == nil || modelLabel.GetText() == "") && !lshwSuccess
+
+	vendorLabel, hasVendor := labels.labels["gpu_vendor"]
+	vendorEmpty := !hasVendor || vendorLabel == nil || vendorLabel.GetText() == ""
+
+	rendererLabel, hasRenderer := labels.labels["gpu_renderer"]
+	rendererEmpty := !hasRenderer || rendererLabel == nil || rendererLabel.GetText() == ""
+
+	driverLabel, hasDriver := labels.labels["gpu_driver"]
+	driverEmpty := !hasDriver || driverLabel == nil || driverLabel.GetText() == ""
+
+	memoryLabel, hasMemory := labels.labels["gpu_memory"]
+	memoryEmpty := !hasMemory || memoryLabel == nil || memoryLabel.GetText() == ""
+
+	// Fall back to lspci for GPU model if needed
+	if modelEmpty {
+		if _, err := executeCommand("which", "lspci"); err == nil {
+			// Extract GPU info using grep
+			gpuLines, err := executeCommand("bash", "-c", "lspci | grep -i 'vga\\|3d\\|2d'")
+			if err == nil && len(gpuLines) > 0 {
+				// Set primary GPU model
+				lines := strings.Split(gpuLines, "\n")
+				if len(lines) > 0 {
+					// Extract GPU name from the first line
+					parts := strings.SplitN(lines[0], ":", 2)
+					if len(parts) >= 2 {
+						model := strings.TrimSpace(parts[1])
+						displayText := truncateText(model, 35)
+						labels.update("gpu_model", displayText)
+
+						// Always add tooltip for GPU model as they're typically long
+						if label, ok := labels.labels["gpu_model"]; ok && len(model) > 35 {
+							label.SetTooltipText(model) // Show full text in tooltip
+						}
+					}
+				}
+			} else {
+				labels.update("gpu_model", "No dedicated GPU detected")
+			}
+		} else {
+			labels.update("gpu_model", "GPU detection not available (lspci not found)")
+		}
 	}
 
 	// Try to get OpenGL information using glxinfo
 	if _, err := executeCommand("which", "glxinfo"); err == nil {
-		// Extract OpenGL vendor
-		vendorCmd := "glxinfo | grep 'OpenGL vendor'"
-		if vendor, err := executeCommand("bash", "-c", vendorCmd); err == nil {
-			parts := strings.SplitN(vendor, ":", 2)
-			if len(parts) >= 2 {
-				vendorText := strings.TrimSpace(parts[1])
-				displayText := truncateText(vendorText, 30)
-				labels.update("gpu_vendor", displayText)
-				
-				// Add tooltip for full text if truncated
-				if label, ok := labels.labels["gpu_vendor"]; ok && len(vendorText) > 30 {
-					label.SetTooltipText(vendorText)
+		// Only get vendor if needed
+		if vendorEmpty {
+			vendorCmd := "glxinfo | grep 'OpenGL vendor'"
+			if vendor, err := executeCommand("bash", "-c", vendorCmd); err == nil {
+				parts := strings.SplitN(vendor, ":", 2)
+				if len(parts) >= 2 {
+					vendorText := strings.TrimSpace(parts[1])
+					displayText := truncateText(vendorText, 30)
+					labels.update("gpu_vendor", displayText)
+
+					// Add tooltip for full text if truncated
+					if label, ok := labels.labels["gpu_vendor"]; ok && len(vendorText) > 30 {
+						label.SetTooltipText(vendorText)
+					}
 				}
 			}
 		}
 
-		// Extract OpenGL renderer
-		rendererCmd := "glxinfo | grep 'OpenGL renderer'"
-		if renderer, err := executeCommand("bash", "-c", rendererCmd); err == nil {
-			parts := strings.SplitN(renderer, ":", 2)
-			if len(parts) >= 2 {
-				rendererText := strings.TrimSpace(parts[1])
-				displayText := truncateText(rendererText, 30)
-				labels.update("gpu_renderer", displayText)
-				
-				// Add tooltip for full text if truncated
-				if label, ok := labels.labels["gpu_renderer"]; ok && len(rendererText) > 30 {
-					label.SetTooltipText(rendererText)
+		// Only get renderer if needed
+		if rendererEmpty {
+			rendererCmd := "glxinfo | grep 'OpenGL renderer'"
+			if renderer, err := executeCommand("bash", "-c", rendererCmd); err == nil {
+				parts := strings.SplitN(renderer, ":", 2)
+				if len(parts) >= 2 {
+					rendererText := strings.TrimSpace(parts[1])
+					displayText := truncateText(rendererText, 30)
+					labels.update("gpu_renderer", displayText)
+
+					// Add tooltip for full text if truncated
+					if label, ok := labels.labels["gpu_renderer"]; ok && len(rendererText) > 30 {
+						label.SetTooltipText(rendererText)
+					}
 				}
 			}
 		}
 
-		// Extract OpenGL version
+		// Always try to get OpenGL version
 		versionCmd := "glxinfo | grep 'OpenGL version'"
 		if version, err := executeCommand("bash", "-c", versionCmd); err == nil {
 			parts := strings.SplitN(version, ":", 2)
@@ -299,7 +424,7 @@ func refreshGPUInfo(labels *labelMap) {
 				versionText := strings.TrimSpace(parts[1])
 				displayText := truncateText(versionText, 30)
 				labels.update("gpu_gl_version", displayText)
-				
+
 				// Add tooltip for full text if truncated
 				if label, ok := labels.labels["gpu_gl_version"]; ok && len(versionText) > 30 {
 					label.SetTooltipText(versionText)
@@ -316,32 +441,43 @@ func refreshGPUInfo(labels *labelMap) {
 		if nvInfo, err := executeCommand("nvidia-smi", "--query-gpu=name,driver_version,memory.total,utilization.gpu", "--format=csv,noheader"); err == nil {
 			parts := strings.Split(nvInfo, ",")
 			if len(parts) >= 4 {
-				driverText := "NVIDIA " + strings.TrimSpace(parts[1])
-				memoryText := strings.TrimSpace(parts[2])
+				// Only update driver if needed
+				if driverEmpty {
+					driverText := "NVIDIA " + strings.TrimSpace(parts[1])
+					displayDriver := truncateText(driverText, 30)
+					labels.update("gpu_driver", displayDriver)
+
+					// Add tooltip for full text if truncated
+					if label, ok := labels.labels["gpu_driver"]; ok && len(driverText) > 30 {
+						label.SetTooltipText(driverText)
+					}
+				}
+
+				// Only update memory if needed
+				if memoryEmpty {
+					memoryText := strings.TrimSpace(parts[2])
+					displayMemory := truncateText(memoryText, 30)
+					labels.update("gpu_memory", displayMemory)
+
+					// Add tooltip for full text if truncated
+					if label, ok := labels.labels["gpu_memory"]; ok && len(memoryText) > 30 {
+						label.SetTooltipText(memoryText)
+					}
+				}
+
+				// Always update utilization as it's real-time data
 				utilizationText := strings.TrimSpace(parts[3])
-				
-				displayDriver := truncateText(driverText, 30)
-				displayMemory := truncateText(memoryText, 30)
 				displayUtil := truncateText(utilizationText, 30)
-				
-				labels.update("gpu_driver", displayDriver)
-				labels.update("gpu_memory", displayMemory)
 				labels.update("gpu_utilization", displayUtil)
-				
-				// Add tooltips for truncated values
-				if label, ok := labels.labels["gpu_driver"]; ok && len(driverText) > 30 {
-					label.SetTooltipText(driverText)
-				}
-				if label, ok := labels.labels["gpu_memory"]; ok && len(memoryText) > 30 {
-					label.SetTooltipText(memoryText)
-				}
+
+				// Add tooltip for full text if truncated
 				if label, ok := labels.labels["gpu_utilization"]; ok && len(utilizationText) > 30 {
 					label.SetTooltipText(utilizationText)
 				}
 			}
 		}
-	} else {
-		// Try to get driver info from lspci
+	} else if driverEmpty {
+		// Try to get driver info from lspci if needed and nvidia-smi is not available
 		if _, err := executeCommand("which", "lspci"); err == nil {
 			driverCmd := "lspci -v | grep -A10 -i 'vga\\|3d' | grep 'Kernel driver in use'"
 			if driver, err := executeCommand("bash", "-c", driverCmd); err == nil {
@@ -350,15 +486,15 @@ func refreshGPUInfo(labels *labelMap) {
 					driverText := strings.TrimSpace(parts[1])
 					displayText := truncateText(driverText, 30)
 					labels.update("gpu_driver", displayText)
-					
+
 					// Add tooltip for full text if truncated
 					if label, ok := labels.labels["gpu_driver"]; ok && len(driverText) > 30 {
 						label.SetTooltipText(driverText)
 					}
 				}
+			} else {
+				labels.update("gpu_driver", "Unknown")
 			}
-		} else {
-			labels.update("gpu_driver", "Unknown")
 		}
 	}
 }
@@ -489,7 +625,7 @@ func addDiskRowToGrid(grid *gtk4.Grid, rowIndex int, fields []string) {
 	device := fields[0]
 	deviceLabel := gtk4.NewLabel(device)
 	deviceLabel.AddCssClass("disk-device")
-	
+
 	// Add tooltip if device name is long
 	if len(device) > 16 {
 		// Store full device name before truncating for display
@@ -499,7 +635,7 @@ func addDiskRowToGrid(grid *gtk4.Grid, rowIndex int, fields []string) {
 		// Add tooltip with full device name
 		deviceLabel.SetTooltipText(fullDevice)
 	}
-	
+
 	grid.Attach(deviceLabel, 0, rowIndex, 1, 1)
 
 	// Size column
@@ -539,7 +675,7 @@ func addDiskRowToGrid(grid *gtk4.Grid, rowIndex int, fields []string) {
 	mountPoint := strings.Join(fields[5:], " ")
 	mountLabel := gtk4.NewLabel(mountPoint)
 	mountLabel.AddCssClass("disk-mount")
-	
+
 	// Add tooltip if mount path is long
 	if len(mountPoint) > 20 {
 		// Store full path
@@ -549,7 +685,7 @@ func addDiskRowToGrid(grid *gtk4.Grid, rowIndex int, fields []string) {
 		// Add tooltip with full path
 		mountLabel.SetTooltipText(fullMount)
 	}
-	
+
 	grid.Attach(mountLabel, 5, rowIndex, 1, 1)
 }
 
