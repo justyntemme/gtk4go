@@ -240,6 +240,21 @@ func (mb *MenuButton) SetLabel(label string) {
     )
 }
 
+// SetIconName sets an icon for the menu button
+func (mb *MenuButton) SetIconName(iconName string) {
+    cIconName := C.CString(iconName)
+    defer C.free(unsafe.Pointer(cIconName))
+    
+    // Create a new image from the icon name
+    image := C.gtk_image_new_from_icon_name(cIconName)
+    
+    // Set the image as the child of the button
+    C.gtk_menu_button_set_child(
+        (*C.GtkMenuButton)(unsafe.Pointer(mb.widget)),
+        image,
+    )
+}
+
 // SetPopover sets a popover for the menu button
 func (mb *MenuButton) SetPopover(popover *PopoverMenu) {
     C.gtk_menu_button_set_popover(
