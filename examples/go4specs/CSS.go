@@ -12,7 +12,42 @@ func loadAppStyles() error {
 		window {
 			background-color: #f5f5f5;
 		}
-		
+    /* ======== GPU INFO GRID STYLING ======== */
+    .disk-info-grid {
+      background-color: #f7f7f7;
+      border-radius: 4px;
+      padding: 8px;
+      margin: 4px 0;
+    }
+
+.disk-header {
+    font-weight: bold;
+    color: #303030;
+    padding: 4px 0;
+}
+
+.disk-separator {
+    color: #777777;
+}
+
+.disk-device, .info-key {
+    font-family: monospace;
+    font-weight: bold;
+    padding: 3px 0;
+}
+
+.info-value {
+    font-family: monospace;
+    padding: 3px 0;
+}
+
+/* Add overflow handling for long text values */
+.info-value, .disk-mount {
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+    max-width: 300px;
+}		
 		/* ======== BUTTON STYLING ======== */
 		/* Default button styling - light background with dark text */
 		.default-btn {
