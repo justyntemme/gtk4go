@@ -24,17 +24,18 @@ const (
 	DebugComponentDialog      = "dialog"
 	DebugComponentListView    = "listview"
 	DebugComponentListFactory = "listfactory"
+	DebugComponentTooltip     = "tooltip"
 	DebugComponentAction      = "action"
 	DebugComponentSelection   = "selection"
 )
 
 // Global debug configuration
 var (
-	debugLevel         = DebugLevelNone
-	debugFilter        = make(map[string]bool)
-	debugLogPrefix     = "[GTK4Go] "
-	debugMutex         sync.RWMutex
-	debugToStdErr      = false
+	debugLevel     = DebugLevelNone
+	debugFilter    = make(map[string]bool)
+	debugLogPrefix = "[GTK4Go] "
+	debugMutex     sync.RWMutex
+	debugToStdErr  = false
 )
 
 // SetDebugLevel sets the global debug level
@@ -99,7 +100,7 @@ func DebugLog(level int, component string, format string, args ...interface{}) {
 	if level <= currentLevel && (isComponentEnabled || !exists) {
 		message := fmt.Sprintf(format, args...)
 		logMessage := fmt.Sprintf("%s[%s] %s", debugLogPrefix, component, message)
-		
+
 		if useStdErr {
 			log.Printf("%s\n", logMessage)
 		} else {
@@ -107,3 +108,4 @@ func DebugLog(level int, component string, format string, args ...interface{}) {
 		}
 	}
 }
+
