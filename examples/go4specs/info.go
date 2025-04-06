@@ -188,12 +188,14 @@ func refreshOSInfo(labels *labelMap) {
 func refreshCPUInfo(labels *labelMap) {
 	// Update CPU Model
 	if model, err := readCPUModel(); err == nil {
-		text := model
+
+		text := strings.Fields(model)[4]
+		toolTipText := model
 		labels.update("cpu_model", text)
 
 		// CPU model strings are often very long, always add tooltip
 		if label, ok := labels.labels["cpu_model"]; ok {
-			label.SetTooltipText(text)
+			label.SetTooltipText(toolTipText)
 		}
 	}
 
@@ -298,7 +300,8 @@ func refreshGPUInfo(labels *labelMap) {
 			}
 
 			if driver != "" {
-				displayText := truncateText(driver, 30)
+				// displayText := truncateText(driver, 30)
+				displayText := strings.Fields(driver)[0]
 				labels.update("gpu_driver", displayText)
 
 				// Add tooltip for full text if truncated
@@ -484,7 +487,8 @@ func refreshGPUInfo(labels *labelMap) {
 				parts := strings.SplitN(driver, ":", 2)
 				if len(parts) >= 2 {
 					driverText := strings.TrimSpace(parts[1])
-					displayText := truncateText(driverText, 30)
+					// displayText := truncateText(driverText, 30)
+					displayText := strings.Fields(driverText)[0]
 					labels.update("gpu_driver", displayText)
 
 					// Add tooltip for full text if truncated
