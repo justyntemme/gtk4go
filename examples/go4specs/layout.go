@@ -65,13 +65,8 @@ func createStatusBar() *gtk4.Box {
 	spacer := gtk4.NewBox(gtk4.OrientationHorizontal, 0)
 	spacer.SetHExpand(true)
 
-	// Last updated info
-	// lastUpdatedLabel := gtk4.NewLabel("Last updated: Never")
-	// lastUpdatedLabel.AddCssClass("update-time")
-
 	statusBar.Append(spacer)
 	statusBar.Append(autoRefreshButton)
-	// statusBar.Append(lastUpdatedLabel)
 
 	return statusBar
 }
@@ -84,8 +79,10 @@ func createHardwarePanel() (*gtk4.Box, *labelMap, *labelMap, *labelMap, *labelMa
 	scrollWin := gtk4.NewScrolledWindow(
 		gtk4.WithHScrollbarPolicy(gtk4.ScrollbarPolicyNever),
 		gtk4.WithVScrollbarPolicy(gtk4.ScrollbarPolicyAutomatic),
+		gtk4.WithPropagateNaturalWidth(true), 
+		gtk4.WithPropagateNaturalHeight(true),
 		gtk4.WithHExpand(true),
-		gtk4.WithPropagateNaturalWidth(true), gtk4.WithPropagateNaturalHeight(true),
+		gtk4.WithVExpand(true),
 	)
 
 	panel := gtk4.NewBox(gtk4.OrientationVertical, 16)
@@ -118,46 +115,46 @@ func createHardwarePanel() (*gtk4.Box, *labelMap, *labelMap, *labelMap, *labelMa
 
 	// Create column headers similar to disk/memory sections
 	cpuHeaders := []string{"CPU Model", "CPU Cores", "CPU Threads", "CPU Frequency", "CPU Usage"}
-
+	
 	// Add headers to the grid with consistent styling
 	for i, header := range cpuHeaders {
 		label := gtk4.NewLabel(header)
 		label.AddCssClass("disk-header")
 		cpuGrid.Attach(label, i, 0, 1, 1)
 	}
-
+	
 	// Add a separator row like in other sections
 	for i := 0; i < len(cpuHeaders); i++ {
 		separator := gtk4.NewLabel("--------")
 		separator.AddCssClass("disk-separator")
 		cpuGrid.Attach(separator, i, 1, 1, 1)
 	}
-
+	
 	// Create value labels for the second row and add to label map
 	// CPU Model - Column 0
 	cpuModelValue := gtk4.NewLabel("")
 	cpuModelValue.AddCssClass("disk-device") // Using disk-device for model name styling
 	cpuGrid.Attach(cpuModelValue, 0, 2, 1, 1)
 	cpuLabels.add("cpu_model", cpuModelValue)
-
+	
 	// CPU Cores - Column 1
 	cpuCoresValue := gtk4.NewLabel("")
 	cpuCoresValue.AddCssClass("disk-size")
 	cpuGrid.Attach(cpuCoresValue, 1, 2, 1, 1)
 	cpuLabels.add("cpu_cores", cpuCoresValue)
-
+	
 	// CPU Threads - Column 2
 	cpuThreadsValue := gtk4.NewLabel("")
 	cpuThreadsValue.AddCssClass("disk-size")
 	cpuGrid.Attach(cpuThreadsValue, 2, 2, 1, 1)
 	cpuLabels.add("cpu_threads", cpuThreadsValue)
-
+	
 	// CPU Frequency - Column 3
 	cpuFreqValue := gtk4.NewLabel("")
 	cpuFreqValue.AddCssClass("disk-avail")
 	cpuGrid.Attach(cpuFreqValue, 3, 2, 1, 1)
 	cpuLabels.add("cpu_freq", cpuFreqValue)
-
+	
 	// CPU Usage - Column 4
 	cpuUsageValue := gtk4.NewLabel("")
 	cpuUsageValue.AddCssClass("disk-percent")
@@ -178,8 +175,8 @@ func createHardwarePanel() (*gtk4.Box, *labelMap, *labelMap, *labelMap, *labelMa
 
 	// GPU Grid - keep existing vertical layout but ensure consistent styling
 	gpuGrid := gtk4.NewGrid(
-		gtk4.WithRowSpacing(4),
-		gtk4.WithColumnSpacing(12),
+		gtk4.WithRowSpacing(4),     
+		gtk4.WithColumnSpacing(12), 
 		gtk4.WithRowHomogeneous(false),
 	)
 	gpuGrid.AddCssClass("disk-info-grid")
@@ -231,8 +228,8 @@ func createHardwarePanel() (*gtk4.Box, *labelMap, *labelMap, *labelMap, *labelMa
 
 	// Memory Grid - a horizontal grid with all RAM info in one row with equal spacing
 	memoryGrid := gtk4.NewGrid(
-		gtk4.WithRowSpacing(4),
-		gtk4.WithColumnSpacing(12),
+		gtk4.WithRowSpacing(4),     
+		gtk4.WithColumnSpacing(12), 
 		gtk4.WithRowHomogeneous(false),
 		gtk4.WithColumnHomogeneous(true), // Make columns equal width
 	)
@@ -242,52 +239,52 @@ func createHardwarePanel() (*gtk4.Box, *labelMap, *labelMap, *labelMap, *labelMa
 
 	// Create column headers similar to disk section
 	memHeaders := []string{"Total RAM", "Used RAM", "Free RAM", "RAM Usage", "Swap Total", "Swap Used"}
-
+	
 	// Add headers to the grid with consistent styling
 	for i, header := range memHeaders {
 		label := gtk4.NewLabel(header)
 		label.AddCssClass("disk-header")
 		memoryGrid.Attach(label, i, 0, 1, 1)
 	}
-
+	
 	// Add a separator row like in the disk section
 	for i := 0; i < len(memHeaders); i++ {
 		separator := gtk4.NewLabel("--------")
 		separator.AddCssClass("disk-separator")
 		memoryGrid.Attach(separator, i, 1, 1, 1)
 	}
-
+	
 	// Create value labels for the second row and add to label map
 	// Total RAM - Column 0
 	totalRamValue := gtk4.NewLabel("")
 	totalRamValue.AddCssClass("disk-size") // Using disk-size for consistent styling
 	memoryGrid.Attach(totalRamValue, 0, 2, 1, 1)
 	memoryLabels.add("ram_total", totalRamValue)
-
+	
 	// Used RAM - Column 1
 	usedRamValue := gtk4.NewLabel("")
 	usedRamValue.AddCssClass("disk-used")
 	memoryGrid.Attach(usedRamValue, 1, 2, 1, 1)
 	memoryLabels.add("ram_used", usedRamValue)
-
+	
 	// Free RAM - Column 2
 	freeRamValue := gtk4.NewLabel("")
 	freeRamValue.AddCssClass("disk-avail")
 	memoryGrid.Attach(freeRamValue, 2, 2, 1, 1)
 	memoryLabels.add("ram_free", freeRamValue)
-
+	
 	// RAM Usage - Column 3
 	ramUsageValue := gtk4.NewLabel("")
 	ramUsageValue.AddCssClass("disk-percent")
 	memoryGrid.Attach(ramUsageValue, 3, 2, 1, 1)
 	memoryLabels.add("ram_usage", ramUsageValue)
-
+	
 	// Swap Total - Column 4
 	swapTotalValue := gtk4.NewLabel("")
 	swapTotalValue.AddCssClass("disk-size")
 	memoryGrid.Attach(swapTotalValue, 4, 2, 1, 1)
 	memoryLabels.add("swap_total", swapTotalValue)
-
+	
 	// Swap Used - Column 5
 	swapUsedValue := gtk4.NewLabel("")
 	swapUsedValue.AddCssClass("disk-used")
@@ -474,24 +471,30 @@ func createHeaderBar() *gtk4.Box {
 	titleLabel := gtk4.NewLabel(TITLE)
 	titleLabel.AddCssClass("header-title")
 
-	// Spacer to push refresh button to the right
+	// Spacer to push menu button to the right
 	spacer := gtk4.NewBox(gtk4.OrientationHorizontal, 0)
 	spacer.SetHExpand(true)
 
-	// Refresh button with icon
-	refreshButton := gtk4.NewButton("Refresh")
-	refreshButton.AddCssClass("refresh-button")
-	refreshButton.AddCssClass("dark-area-btn")
+	// Create a gear menu button
+	menuButton := gtk4.NewMenuButton()
+	menuButton.AddCssClass("dark-area-btn")
+	menuButton.SetIconName("emblem-system-symbolic") // Standard GTK gear icon
 
-	// Connect refresh button click
-	refreshButton.ConnectClicked(func() {
-		refreshAllData()
-	})
+	// Create menu model for the menu button
+	menu := gtk4.NewMenu()
+	
+	// Add "Refresh" menu item
+	refreshItem := gtk4.NewMenuItem("Refresh", "app.refresh")
+	menu.AppendItem(refreshItem)
+	
+	// Create a popover menu for the button
+	popoverMenu := gtk4.NewPopoverMenu(menu)
+	menuButton.SetPopover(popoverMenu)
 
 	// Add elements to header
 	headerBar.Append(titleLabel)
 	headerBar.Append(spacer)
-	headerBar.Append(refreshButton)
+	headerBar.Append(menuButton)
 
 	return headerBar
 }
@@ -552,4 +555,3 @@ func createMainLayout(win *gtk4.Window) *gtk4.Box {
 
 	return mainBox
 }
-

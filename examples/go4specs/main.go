@@ -63,6 +63,7 @@ var (
 	autoRefreshEnabled bool = true
 	lastRefreshTime    time.Time
 	autoRefreshTimer   *time.Timer
+	appInstance        *gtk4.Application // Store application instance globally
 
 	// Thread-safety improvements
 	refreshAtomicFlag atomic.Int32 // 0 = not refreshing, 1 = refreshing
@@ -81,6 +82,13 @@ func main() {
 
 	// Create application
 	app := gtk4.NewApplication(APP_ID)
+	appInstance = app // Store application instance globally
+	
+	// Create the refresh action
+	refreshAction := gtk4.NewAction("refresh", func() {
+		refreshAllData()
+	})
+	app.GetActionGroup().AddAction(refreshAction)
 
 	// Create window
 	win := gtk4.NewWindow(TITLE)
@@ -112,4 +120,3 @@ func main() {
 	// Run the application
 	os.Exit(app.Run())
 }
-
