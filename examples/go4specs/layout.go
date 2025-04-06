@@ -194,33 +194,70 @@ func createHardwarePanel() (*gtk4.Box, *labelMap, *labelMap, *labelMap, *labelMa
 	memoryHeader.AddCssClass("card-title")
 	memoryCard.Append(memoryHeader)
 
-	// Memory Grid
+	// Memory Grid - a horizontal grid with all RAM info in one row with equal spacing
 	memoryGrid := gtk4.NewGrid(
-		gtk4.WithRowSpacing(8),
-		gtk4.WithColumnSpacing(24),
+		gtk4.WithRowSpacing(4),     
+		gtk4.WithColumnSpacing(12), 
 		gtk4.WithRowHomogeneous(false),
+		gtk4.WithColumnHomogeneous(true), // Make columns equal width
 	)
-	memoryGrid.AddCssClass("info-grid")
+	memoryGrid.AddCssClass("disk-info-grid")
 
 	memoryLabels := newLabelMap()
 
-	// Total RAM
-	addInfoRow(memoryGrid, 0, "Total RAM:", "", memoryLabels, "ram_total")
-
-	// Used RAM
-	addInfoRow(memoryGrid, 1, "Used RAM:", "", memoryLabels, "ram_used")
-
-	// Free RAM
-	addInfoRow(memoryGrid, 2, "Free RAM:", "", memoryLabels, "ram_free")
-
-	// RAM Usage
-	addInfoRow(memoryGrid, 3, "RAM Usage:", "", memoryLabels, "ram_usage")
-
-	// Swap Total
-	addInfoRow(memoryGrid, 4, "Swap Total:", "", memoryLabels, "swap_total")
-
-	// Swap Used
-	addInfoRow(memoryGrid, 5, "Swap Used:", "", memoryLabels, "swap_used")
+	// Create column headers similar to disk section
+	headerLabels = []string{"Total RAM", "Used RAM", "Free RAM", "RAM Usage", "Swap Total", "Swap Used"}
+	
+	// Add headers to the grid with consistent styling
+	for i, header := range headerLabels {
+		label := gtk4.NewLabel(header)
+		label.AddCssClass("disk-header")
+		memoryGrid.Attach(label, i, 0, 1, 1)
+	}
+	
+	// Add a separator row like in the disk section
+	for i := 0; i < len(headerLabels); i++ {
+		separator := gtk4.NewLabel("--------")
+		separator.AddCssClass("disk-separator")
+		memoryGrid.Attach(separator, i, 1, 1, 1)
+	}
+	
+	// Create value labels for the second row and add to label map
+	// Total RAM - Column 0
+	totalRamValue := gtk4.NewLabel("")
+	totalRamValue.AddCssClass("disk-size") // Using disk-size for consistent styling
+	memoryGrid.Attach(totalRamValue, 0, 2, 1, 1)
+	memoryLabels.add("ram_total", totalRamValue)
+	
+	// Used RAM - Column 1
+	usedRamValue := gtk4.NewLabel("")
+	usedRamValue.AddCssClass("disk-used")
+	memoryGrid.Attach(usedRamValue, 1, 2, 1, 1)
+	memoryLabels.add("ram_used", usedRamValue)
+	
+	// Free RAM - Column 2
+	freeRamValue := gtk4.NewLabel("")
+	freeRamValue.AddCssClass("disk-avail")
+	memoryGrid.Attach(freeRamValue, 2, 2, 1, 1)
+	memoryLabels.add("ram_free", freeRamValue)
+	
+	// RAM Usage - Column 3
+	ramUsageValue := gtk4.NewLabel("")
+	ramUsageValue.AddCssClass("disk-percent")
+	memoryGrid.Attach(ramUsageValue, 3, 2, 1, 1)
+	memoryLabels.add("ram_usage", ramUsageValue)
+	
+	// Swap Total - Column 4
+	swapTotalValue := gtk4.NewLabel("")
+	swapTotalValue.AddCssClass("disk-size")
+	memoryGrid.Attach(swapTotalValue, 4, 2, 1, 1)
+	memoryLabels.add("swap_total", swapTotalValue)
+	
+	// Swap Used - Column 5
+	swapUsedValue := gtk4.NewLabel("")
+	swapUsedValue.AddCssClass("disk-used")
+	memoryGrid.Attach(swapUsedValue, 5, 2, 1, 1)
+	memoryLabels.add("swap_used", swapUsedValue)
 
 	memoryCard.Append(memoryGrid)
 	panel.Append(memoryCard)
@@ -480,4 +517,3 @@ func createMainLayout(win *gtk4.Window) *gtk4.Box {
 
 	return mainBox
 }
-
