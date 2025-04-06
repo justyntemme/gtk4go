@@ -78,6 +78,38 @@ func (w *BaseWidget) HasCssClass(className string) bool {
 	return C.gtk_widget_has_css_class(w.widget, cClassName) == 1
 }
 
+// SetHExpand sets whether the widget expands horizontally
+func (w *BaseWidget) SetHExpand(expand bool) {
+	var cexpand C.gboolean
+	if expand {
+		cexpand = C.TRUE
+	} else {
+		cexpand = C.FALSE
+	}
+	C.gtk_widget_set_hexpand(w.widget, cexpand)
+}
+
+// GetHExpand gets whether the widget expands horizontally
+func (w *BaseWidget) GetHExpand() bool {
+	return C.gtk_widget_get_hexpand(w.widget) == C.TRUE
+}
+
+// SetVExpand sets whether the widget expands vertically
+func (w *BaseWidget) SetVExpand(expand bool) {
+	var cexpand C.gboolean
+	if expand {
+		cexpand = C.TRUE
+	} else {
+		cexpand = C.FALSE
+	}
+	C.gtk_widget_set_vexpand(w.widget, cexpand)
+}
+
+// GetVExpand gets whether the widget expands vertically
+func (w *BaseWidget) GetVExpand() bool {
+	return C.gtk_widget_get_vexpand(w.widget) == C.TRUE
+}
+
 // SetChild sets the child widget
 // Note: Not all GTK widgets support this operation directly.
 // For containers like Box, Grid, etc., use their specific methods instead.
