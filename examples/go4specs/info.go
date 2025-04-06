@@ -2,6 +2,7 @@ package main
 
 import (
 	"../../../gtk4go"
+	"../../gtk4/"
 	"bufio"
 	"fmt"
 	"os"
@@ -52,7 +53,7 @@ func refreshAllData() {
 
 		// Refresh RAM Info
 		refreshRAMInfo(memoryLabels)
-		
+
 		// Refresh GPU Info
 		refreshGPUInfo(gpuLabels)
 
@@ -254,29 +255,38 @@ func refreshRAMInfo(labels *labelMap) {
 
 // refreshDiskInfo updates the disk information
 func refreshDiskInfo(labels *labelMap) {
+	// Check if the diskCard variable is available
+	if diskCard == nil {
+		// Not ready yet, just update the old text format if possible
+		if infoLabel, ok := labels.labels["disk_info"]; ok && infoLabel != nil {
+			infoLabel.SetText("Disk information display not initialized.")
+		}
+		return
+	}
+
 	// Get disk information using df command
 	output, err := executeCommand("df", "-h", "--output=source,size,used,avail,pcent,target")
 	if err != nil {
-		labels.update("disk_info", "Error getting disk information")
+		// If there's an error, create a grid with just an error message
+		grid := createEmptyDiskGrid("Error getting disk information")
+		updateDiskDisplay(grid)
 		return
 	}
 
 	// Parse the output
 	lines := strings.Split(output, "\n")
 	if len(lines) <= 1 {
-		labels.update("disk_info", "No disk information available")
+		// If there's no data, create a grid with just a message
+		grid := createEmptyDiskGrid("No disk information available")
+		updateDiskDisplay(grid)
 		return
 	}
 
-	// Create formatted output with pretty table
-	var formattedOutput strings.Builder
-
-	// Create header
-	formattedOutput.WriteString(fmt.Sprintf("%-16s %-8s %-8s %-8s %-6s %-s\n",
-		"Device", "Size", "Used", "Avail", "Use%", "Mount Point"))
-	formattedOutput.WriteString(strings.Repeat("-", 80) + "\n")
+	// Create a new grid with headers
+	grid := createDiskGridWithHeaders()
 
 	// Process each line except header
+	rowIndex := 2 // Start at row 2 (after headers and separator)
 	for i, line := range lines {
 		if i == 0 || len(strings.TrimSpace(line)) == 0 {
 			// Skip header and empty lines
@@ -285,23 +295,137 @@ func refreshDiskInfo(labels *labelMap) {
 
 		fields := strings.Fields(line)
 		if len(fields) >= 6 {
-			// Format each line for better readability
-			device := fields[0]
-			if len(device) > 16 {
-				device = device[:13] + "..."
-			}
-
-			mountPoint := strings.Join(fields[5:], " ")
-			if len(mountPoint) > 20 {
-				mountPoint = mountPoint[:17] + "..."
-			}
-
-			formattedOutput.WriteString(fmt.Sprintf("%-16s %-8s %-8s %-8s %-6s %-s\n",
-				device, fields[1], fields[2], fields[3], fields[4], mountPoint))
+			// Add this disk entry to the grid
+			addDiskRowToGrid(grid, rowIndex, fields)
+			rowIndex++
 		}
 	}
 
-	labels.update("disk_info", formattedOutput.String())
+	// Update the display with our new grid
+	updateDiskDisplay(grid)
+}
+
+// createEmptyDiskGrid creates a grid with just headers and a message
+func createEmptyDiskGrid(message string) *gtk4.Grid {
+	grid := gtk4.NewGrid(
+		gtk4.WithRowSpacing(4),
+		gtk4.WithColumnSpacing(12),
+		gtk4.WithRowHomogeneous(false),
+	)
+	grid.AddCssClass("disk-info-grid")
+
+	// Add headers
+	headerLabels := []string{"Device", "Size", "Used", "Avail", "Use%", "Mount Point"}
+	for i, header := range headerLabels {
+		label := gtk4.NewLabel(header)
+		label.AddCssClass("disk-header")
+		grid.Attach(label, i, 0, 1, 1)
+	}
+
+	// Add message spanning all columns
+	messageLabel := gtk4.NewLabel(message)
+	if message == "Error getting disk information" {
+		messageLabel.AddCssClass("disk-info-error")
+	} else {
+		messageLabel.AddCssClass("disk-info-message")
+	}
+	grid.Attach(messageLabel, 0, 1, 6, 1)
+
+	return grid
+}
+
+// createDiskGridWithHeaders creates a new grid with headers and separator
+func createDiskGridWithHeaders() *gtk4.Grid {
+	grid := gtk4.NewGrid(
+		gtk4.WithRowSpacing(4),
+		gtk4.WithColumnSpacing(12),
+		gtk4.WithRowHomogeneous(false),
+	)
+	grid.AddCssClass("disk-info-grid")
+
+	// Add column headers
+	headerLabels := []string{"Device", "Size", "Used", "Avail", "Use%", "Mount Point"}
+	for i, header := range headerLabels {
+		label := gtk4.NewLabel(header)
+		label.AddCssClass("disk-header")
+		grid.Attach(label, i, 0, 1, 1)
+	}
+
+	// Add a separator row
+	for i := 0; i < len(headerLabels); i++ {
+		separator := gtk4.NewLabel("--------")
+		separator.AddCssClass("disk-separator")
+		grid.Attach(separator, i, 1, 1, 1)
+	}
+
+	return grid
+}
+
+// addDiskRowToGrid adds a row of disk information to the grid
+func addDiskRowToGrid(grid *gtk4.Grid, rowIndex int, fields []string) {
+	// Create a label for each field and add it to the grid
+	device := fields[0]
+	if len(device) > 16 {
+		device = device[:13] + "..."
+	}
+
+	deviceLabel := gtk4.NewLabel(device)
+	deviceLabel.AddCssClass("disk-device")
+	grid.Attach(deviceLabel, 0, rowIndex, 1, 1)
+
+	sizeLabel := gtk4.NewLabel(fields[1])
+	sizeLabel.AddCssClass("disk-size")
+	grid.Attach(sizeLabel, 1, rowIndex, 1, 1)
+
+	usedLabel := gtk4.NewLabel(fields[2])
+	usedLabel.AddCssClass("disk-used")
+	grid.Attach(usedLabel, 2, rowIndex, 1, 1)
+
+	availLabel := gtk4.NewLabel(fields[3])
+	availLabel.AddCssClass("disk-avail")
+	grid.Attach(availLabel, 3, rowIndex, 1, 1)
+
+	percentLabel := gtk4.NewLabel(fields[4])
+	percentLabel.AddCssClass("disk-percent")
+
+	// Add color coding based on usage percentage
+	percentValue := strings.TrimSuffix(fields[4], "%")
+	if percentVal, err := strconv.Atoi(percentValue); err == nil {
+		if percentVal >= 90 {
+			percentLabel.AddCssClass("disk-usage-critical")
+		} else if percentVal >= 75 {
+			percentLabel.AddCssClass("disk-usage-warning")
+		} else {
+			percentLabel.AddCssClass("disk-usage-normal")
+		}
+	}
+
+	grid.Attach(percentLabel, 4, rowIndex, 1, 1)
+
+	mountPoint := strings.Join(fields[5:], " ")
+	if len(mountPoint) > 20 {
+		mountPoint = mountPoint[:17] + "..."
+	}
+	mountLabel := gtk4.NewLabel(mountPoint)
+	mountLabel.AddCssClass("disk-mount")
+	grid.Attach(mountLabel, 5, rowIndex, 1, 1)
+}
+
+// updateDiskDisplay updates the display with the new grid
+func updateDiskDisplay(newGrid *gtk4.Grid) {
+	// First, remove any existing child from the diskCard
+	if currentGrid != nil {
+		diskCard.Remove(currentGrid)
+	}
+
+	// Add the new grid and set it as the current grid
+	diskCard.Append(newGrid)
+	currentGrid = newGrid
+
+	// For backward compatibility, update the text label if it exists
+	if infoLabel, ok := diskLabels.labels["disk_info"]; ok && infoLabel != nil {
+		infoLabel.SetText("Information now displayed in grid format.")
+	}
 }
 
 // Helper functions for system information
@@ -601,3 +725,4 @@ func formatBytes(bytes uint64) string {
 		return fmt.Sprintf("%d B", bytes)
 	}
 }
+

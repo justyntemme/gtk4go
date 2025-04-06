@@ -198,6 +198,58 @@ func loadAppStyles() error {
 			background-color: #f5f5f5;
 		}
 		
+		/* ======== DISK INFO GRID STYLING ======== */
+		.disk-info-grid {
+			background-color: #f7f7f7;
+			border-radius: 4px;
+			padding: 8px;
+			margin: 4px 0;
+		}
+
+		.disk-header {
+			font-weight: bold;
+			color: #303030;
+			padding: 4px 0;
+		}
+
+		.disk-separator {
+			color: #777777;
+		}
+
+		.disk-device {
+			font-family: monospace;
+			font-weight: bold;
+			padding: 3px 0;
+		}
+
+		.disk-size, .disk-used, .disk-avail, .disk-percent, .disk-mount {
+			font-family: monospace;
+			padding: 3px 0;
+		}
+
+		.disk-mount {
+			text-align: left;
+		}
+
+		.disk-usage-normal {
+			color: #287c37;
+		}
+
+		.disk-usage-warning {
+			color: #a85913;
+		}
+
+		.disk-usage-critical {
+			color: #b00020;
+			font-weight: bold;
+		}
+
+		.disk-info-error, .disk-info-message {
+			font-style: italic;
+			color: #707070;
+			padding: 8px 4px;
+		}
+		
 		/* ======== STATUS BAR STYLING ======== */
 		.status-bar {
 			background-color: #323232;
