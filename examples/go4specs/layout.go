@@ -3,12 +3,14 @@ package main
 import (
 	"../../gtk4"
 	"fmt"
+	"sync"
 )
 
 // Global variables for disk display
 var (
-    diskCard    *gtk4.Box     // Container for disk information
-    currentGrid *gtk4.Grid    // Current grid being displayed
+	diskCard    *gtk4.Box  // Container for disk information
+	currentGrid *gtk4.Grid // Current grid being displayed
+	uiMutex     sync.Mutex // Mutex to protect UI operations
 )
 
 // addInfoRow adds a row to an info grid with key/value pair
@@ -213,7 +215,8 @@ func createHardwarePanel() (*gtk4.Box, *labelMap, *labelMap, *labelMap, *labelMa
 	memoryCard.Append(memoryGrid)
 	panel.Append(memoryCard)
 
-	// Create Disk info card
+	// Create Disk info card - this is protected by a mutex when updated
+	uiMutex.Lock()
 	diskCard = gtk4.NewBox(gtk4.OrientationVertical, 8)
 	diskCard.AddCssClass("info-card")
 
@@ -253,16 +256,17 @@ func createHardwarePanel() (*gtk4.Box, *labelMap, *labelMap, *labelMap, *labelMa
 	// Set as current grid and add to card
 	currentGrid = initialGrid
 	diskCard.Append(currentGrid)
+	uiMutex.Unlock()
 
 	// Add card to panel
 	panel.Append(diskCard)
 
 	// Create disk labels map (for backward compatibility)
 	diskLabels := newLabelMap()
-    
-    // Add a placeholder label for text-based info (for backward compatibility)
-    placeholderLabel := gtk4.NewLabel("")
-    diskLabels.add("disk_info", placeholderLabel)
+
+	// Add a placeholder label for text-based info (for backward compatibility)
+	placeholderLabel := gtk4.NewLabel("")
+	diskLabels.add("disk_info", placeholderLabel)
 
 	// Set the panel as the scrollable content
 	scrollWin.SetChild(panel)
@@ -456,10 +460,9 @@ func createMainLayout(win *gtk4.Window) *gtk4.Box {
 	mainBox.Append(statusBox)
 
 	// Load CSS styling
-	testing()
 	err := loadAppStyles()
 	if err != nil {
-		fmt.Println("We should probably implement logging TODO")
+		fmt.Println("Failed to load CSS styles:", err)
 	}
 
 	// Initial data load
@@ -467,3 +470,4 @@ func createMainLayout(win *gtk4.Window) *gtk4.Box {
 
 	return mainBox
 }
+

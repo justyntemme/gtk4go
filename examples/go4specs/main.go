@@ -5,6 +5,8 @@ import (
 	"../../gtk4"
 	"fmt"
 	"os"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -19,8 +21,9 @@ const (
 	AUTO_REFRESH_INTERVAL = 30
 )
 
-// labelMap stores references to labels for updating
+// labelMap stores references to labels for updating with thread safety
 type labelMap struct {
+	mu     sync.RWMutex
 	labels map[string]*gtk4.Label
 }
 
@@ -31,12 +34,21 @@ func newLabelMap() *labelMap {
 }
 
 func (lm *labelMap) add(key string, label *gtk4.Label) {
+	lm.mu.Lock()
+	defer lm.mu.Unlock()
 	lm.labels[key] = label
 }
 
 func (lm *labelMap) update(key string, value string) {
-	if label, ok := lm.labels[key]; ok {
-		label.SetText(value)
+	lm.mu.RLock()
+	label, ok := lm.labels[key]
+	lm.mu.RUnlock()
+
+	if ok && label != nil {
+		// Update UI on the UI thread
+		gtk4go.RunOnUIThread(func() {
+			label.SetText(value)
+		})
 	}
 }
 
@@ -46,12 +58,14 @@ var (
 	cpuLabels          *labelMap
 	memoryLabels       *labelMap
 	diskLabels         *labelMap
-	gpuLabels          *labelMap // Added for GPU information
+	gpuLabels          *labelMap
 	statusLabel        *gtk4.Label
 	autoRefreshEnabled bool = true
-	isRefreshing       bool = false
 	lastRefreshTime    time.Time
 	autoRefreshTimer   *time.Timer
+
+	// Thread-safety improvements
+	refreshAtomicFlag atomic.Int32 // 0 = not refreshing, 1 = refreshing
 )
 
 func main() {
@@ -98,3 +112,4 @@ func main() {
 	// Run the application
 	os.Exit(app.Run())
 }
+

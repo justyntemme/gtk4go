@@ -2,7 +2,7 @@ package main
 
 import (
 	"../../../gtk4go"
-	"../../gtk4/"
+	"../../gtk4"
 	"bufio"
 	"fmt"
 	"os"
@@ -21,11 +21,10 @@ func startAutoRefreshTimer() {
 
 	autoRefreshTimer = time.AfterFunc(time.Duration(AUTO_REFRESH_INTERVAL)*time.Second, func() {
 		// Only refresh if auto-refresh is enabled and not currently refreshing
-		if autoRefreshEnabled && !isRefreshing {
+		if autoRefreshEnabled && refreshAtomicFlag.Load() == 0 {
+			// Ensure we call refreshAllData on the UI thread
 			gtk4go.RunOnUIThread(func() {
 				refreshAllData()
-				// Restart timer for next refresh
-				startAutoRefreshTimer()
 			})
 		} else {
 			// Restart timer anyway
@@ -36,12 +35,17 @@ func startAutoRefreshTimer() {
 
 // refreshAllData updates all system information
 func refreshAllData() {
-	if isRefreshing {
+	// Use atomic operation to check and set isRefreshing
+	// This ensures only one refresh can happen at a time
+	if !refreshAtomicFlag.CompareAndSwap(0, 1) {
+		// Another refresh is already in progress
 		return
 	}
 
-	isRefreshing = true
-	statusLabel.SetText("Refreshing data...")
+	// Make sure we update the UI from the UI thread
+	gtk4go.RunOnUIThread(func() {
+		statusLabel.SetText("Refreshing data...")
+	})
 
 	// Use background worker to avoid UI freezing
 	gtk4go.RunInBackground(func() (interface{}, error) {
@@ -62,7 +66,10 @@ func refreshAllData() {
 
 		return "Data refreshed at " + time.Now().Format("15:04:05"), nil
 	}, func(result interface{}, err error) {
-		isRefreshing = false
+		// Reset the refreshing flag when done
+		refreshAtomicFlag.Store(0)
+
+		// This runs on the UI thread
 		lastRefreshTime = time.Now()
 
 		if err != nil {
@@ -255,54 +262,47 @@ func refreshRAMInfo(labels *labelMap) {
 
 // refreshDiskInfo updates the disk information
 func refreshDiskInfo(labels *labelMap) {
-	// Check if the diskCard variable is available
-	if diskCard == nil {
-		// Not ready yet, just update the old text format if possible
-		if infoLabel, ok := labels.labels["disk_info"]; ok && infoLabel != nil {
-			infoLabel.SetText("Disk information display not initialized.")
-		}
-		return
-	}
-
 	// Get disk information using df command
 	output, err := executeCommand("df", "-h", "--output=source,size,used,avail,pcent,target")
+
+	// Prepare all data off the UI thread (no UI components access)
+	var grid *gtk4.Grid
 	if err != nil {
-		// If there's an error, create a grid with just an error message
-		grid := createEmptyDiskGrid("Error getting disk information")
-		updateDiskDisplay(grid)
-		return
-	}
+		// Create a grid with just an error message, but don't attach to UI yet
+		grid = createEmptyDiskGrid("Error getting disk information")
+	} else {
+		// Parse the output
+		lines := strings.Split(output, "\n")
+		if len(lines) <= 1 {
+			// If there's no data, create a grid with just a message
+			grid = createEmptyDiskGrid("No disk information available")
+		} else {
+			// Create a grid with headers
+			grid = createDiskGridWithHeaders()
 
-	// Parse the output
-	lines := strings.Split(output, "\n")
-	if len(lines) <= 1 {
-		// If there's no data, create a grid with just a message
-		grid := createEmptyDiskGrid("No disk information available")
-		updateDiskDisplay(grid)
-		return
-	}
+			// Process each line except header
+			rowIndex := 2 // Start at row 2 (after headers and separator)
+			for i, line := range lines {
+				if i == 0 || len(strings.TrimSpace(line)) == 0 {
+					// Skip header and empty lines
+					continue
+				}
 
-	// Create a new grid with headers
-	grid := createDiskGridWithHeaders()
-
-	// Process each line except header
-	rowIndex := 2 // Start at row 2 (after headers and separator)
-	for i, line := range lines {
-		if i == 0 || len(strings.TrimSpace(line)) == 0 {
-			// Skip header and empty lines
-			continue
-		}
-
-		fields := strings.Fields(line)
-		if len(fields) >= 6 {
-			// Add this disk entry to the grid
-			addDiskRowToGrid(grid, rowIndex, fields)
-			rowIndex++
+				fields := strings.Fields(line)
+				if len(fields) >= 6 {
+					// Add this disk entry to the grid
+					addDiskRowToGrid(grid, rowIndex, fields)
+					rowIndex++
+				}
+			}
 		}
 	}
 
-	// Update the display with our new grid
-	updateDiskDisplay(grid)
+	// Now that the grid is fully built, schedule its attachment to the UI
+	// This will run on the UI thread
+	gtk4go.RunOnUIThread(func() {
+		updateDiskDisplay(grid)
+	})
 }
 
 // createEmptyDiskGrid creates a grid with just headers and a message
@@ -413,6 +413,15 @@ func addDiskRowToGrid(grid *gtk4.Grid, rowIndex int, fields []string) {
 
 // updateDiskDisplay updates the display with the new grid
 func updateDiskDisplay(newGrid *gtk4.Grid) {
+	// Lock the UI mutex to prevent concurrent UI modifications
+	uiMutex.Lock()
+	defer uiMutex.Unlock()
+
+	// Check if diskCard is still valid
+	if diskCard == nil {
+		return
+	}
+
 	// First, remove any existing child from the diskCard
 	if currentGrid != nil {
 		diskCard.Remove(currentGrid)
