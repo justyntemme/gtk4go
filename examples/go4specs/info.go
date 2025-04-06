@@ -52,6 +52,9 @@ func refreshAllData() {
 
 		// Refresh RAM Info
 		refreshRAMInfo(memoryLabels)
+		
+		// Refresh GPU Info
+		refreshGPUInfo(gpuLabels)
 
 		// Refresh Disk Info
 		refreshDiskInfo(diskLabels)
@@ -145,6 +148,88 @@ func refreshCPUInfo(labels *labelMap) {
 	// Update CPU Usage
 	if usage, err := getCPUUsage(); err == nil {
 		labels.update("cpu_usage", fmt.Sprintf("%.1f%%", usage))
+	}
+}
+
+// refreshGPUInfo updates the GPU information labels
+func refreshGPUInfo(labels *labelMap) {
+	// Try to get GPU information using lspci
+	if _, err := executeCommand("which", "lspci"); err == nil {
+		// Extract GPU info using grep
+		gpuLines, err := executeCommand("bash", "-c", "lspci | grep -i 'vga\\|3d\\|2d'")
+		if err == nil && len(gpuLines) > 0 {
+			// Set primary GPU model
+			lines := strings.Split(gpuLines, "\n")
+			if len(lines) > 0 {
+				// Extract GPU name from the first line
+				parts := strings.SplitN(lines[0], ":", 2)
+				if len(parts) >= 2 {
+					labels.update("gpu_model", strings.TrimSpace(parts[1]))
+				}
+			}
+		} else {
+			labels.update("gpu_model", "No dedicated GPU detected")
+		}
+	} else {
+		labels.update("gpu_model", "GPU detection not available (lspci not found)")
+	}
+
+	// Try to get OpenGL information using glxinfo
+	if _, err := executeCommand("which", "glxinfo"); err == nil {
+		// Extract OpenGL vendor
+		vendorCmd := "glxinfo | grep 'OpenGL vendor'"
+		if vendor, err := executeCommand("bash", "-c", vendorCmd); err == nil {
+			parts := strings.SplitN(vendor, ":", 2)
+			if len(parts) >= 2 {
+				labels.update("gpu_vendor", strings.TrimSpace(parts[1]))
+			}
+		}
+
+		// Extract OpenGL renderer
+		rendererCmd := "glxinfo | grep 'OpenGL renderer'"
+		if renderer, err := executeCommand("bash", "-c", rendererCmd); err == nil {
+			parts := strings.SplitN(renderer, ":", 2)
+			if len(parts) >= 2 {
+				labels.update("gpu_renderer", strings.TrimSpace(parts[1]))
+			}
+		}
+
+		// Extract OpenGL version
+		versionCmd := "glxinfo | grep 'OpenGL version'"
+		if version, err := executeCommand("bash", "-c", versionCmd); err == nil {
+			parts := strings.SplitN(version, ":", 2)
+			if len(parts) >= 2 {
+				labels.update("gpu_gl_version", strings.TrimSpace(parts[1]))
+			}
+		}
+	} else {
+		labels.update("gpu_gl_version", "OpenGL info not available (glxinfo not found)")
+	}
+
+	// Try to get NVIDIA-specific information if available
+	if _, err := executeCommand("which", "nvidia-smi"); err == nil {
+		// NVIDIA GPU detected, get additional info
+		if nvInfo, err := executeCommand("nvidia-smi", "--query-gpu=name,driver_version,memory.total,utilization.gpu", "--format=csv,noheader"); err == nil {
+			parts := strings.Split(nvInfo, ",")
+			if len(parts) >= 4 {
+				labels.update("gpu_driver", "NVIDIA "+strings.TrimSpace(parts[1]))
+				labels.update("gpu_memory", strings.TrimSpace(parts[2]))
+				labels.update("gpu_utilization", strings.TrimSpace(parts[3]))
+			}
+		}
+	} else {
+		// Try to get driver info from lspci
+		if _, err := executeCommand("which", "lspci"); err == nil {
+			driverCmd := "lspci -v | grep -A10 -i 'vga\\|3d' | grep 'Kernel driver in use'"
+			if driver, err := executeCommand("bash", "-c", driverCmd); err == nil {
+				parts := strings.SplitN(driver, ":", 2)
+				if len(parts) >= 2 {
+					labels.update("gpu_driver", strings.TrimSpace(parts[1]))
+				}
+			}
+		} else {
+			labels.update("gpu_driver", "Unknown")
+		}
 	}
 }
 

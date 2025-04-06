@@ -68,7 +68,7 @@ func createStatusBar() *gtk4.Box {
 }
 
 // createHardwarePanel builds the hardware information panel
-func createHardwarePanel() (*gtk4.Box, *labelMap, *labelMap, *labelMap) {
+func createHardwarePanel() (*gtk4.Box, *labelMap, *labelMap, *labelMap, *labelMap) {
 	// Create main container with scrolling
 	containerBox := gtk4.NewBox(gtk4.OrientationVertical, 0)
 
@@ -122,6 +122,49 @@ func createHardwarePanel() (*gtk4.Box, *labelMap, *labelMap, *labelMap) {
 
 	cpuCard.Append(cpuGrid)
 	panel.Append(cpuCard)
+
+	// Create GPU info card
+	gpuCard := gtk4.NewBox(gtk4.OrientationVertical, 8)
+	gpuCard.AddCssClass("info-card")
+
+	// GPU Section Header
+	gpuHeader := gtk4.NewLabel("GPU Information")
+	gpuHeader.AddCssClass("card-title")
+	gpuCard.Append(gpuHeader)
+
+	// GPU Grid
+	gpuGrid := gtk4.NewGrid(
+		gtk4.WithRowSpacing(8),
+		gtk4.WithColumnSpacing(24),
+		gtk4.WithRowHomogeneous(false),
+	)
+	gpuGrid.AddCssClass("info-grid")
+
+	gpuLabels := newLabelMap()
+
+	// GPU Model
+	addInfoRow(gpuGrid, 0, "GPU Model:", "", gpuLabels, "gpu_model")
+
+	// GPU Vendor
+	addInfoRow(gpuGrid, 1, "GPU Vendor:", "", gpuLabels, "gpu_vendor")
+
+	// GPU Renderer
+	addInfoRow(gpuGrid, 2, "GPU Renderer:", "", gpuLabels, "gpu_renderer")
+
+	// GPU Driver
+	addInfoRow(gpuGrid, 3, "GPU Driver:", "", gpuLabels, "gpu_driver")
+
+	// GPU OpenGL Version
+	addInfoRow(gpuGrid, 4, "OpenGL Version:", "", gpuLabels, "gpu_gl_version")
+
+	// GPU Memory (only for NVIDIA GPUs)
+	addInfoRow(gpuGrid, 5, "GPU Memory:", "", gpuLabels, "gpu_memory")
+
+	// GPU Utilization (only for NVIDIA GPUs)
+	addInfoRow(gpuGrid, 6, "GPU Utilization:", "", gpuLabels, "gpu_utilization")
+
+	gpuCard.Append(gpuGrid)
+	panel.Append(gpuCard)
 
 	// Create Memory info card
 	memoryCard := gtk4.NewBox(gtk4.OrientationVertical, 8)
@@ -193,7 +236,7 @@ func createHardwarePanel() (*gtk4.Box, *labelMap, *labelMap, *labelMap) {
 	// Add scrolled window to the container box
 	containerBox.Append(scrollWin)
 
-	return containerBox, cpuLabels, memoryLabels, diskLabels
+	return containerBox, cpuLabels, memoryLabels, diskLabels, gpuLabels
 }
 
 // createSystemPanel builds the system information panel
@@ -353,10 +396,11 @@ func createMainLayout(win *gtk4.Window) *gtk4.Box {
 	systemPanel, osLabelsMap := createSystemPanel()
 	osLabels = osLabelsMap
 
-	hardwarePanel, cpuLabelsMap, memLabelsMap, diskLabelsMap := createHardwarePanel()
+	hardwarePanel, cpuLabelsMap, memLabelsMap, diskLabelsMap, gpuLabelsMap := createHardwarePanel()
 	cpuLabels = cpuLabelsMap
 	memoryLabels = memLabelsMap
 	diskLabels = diskLabelsMap
+	gpuLabels = gpuLabelsMap
 
 	// Add panels to stack
 	stack.AddTitled(systemPanel, "system", "System")
