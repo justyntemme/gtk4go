@@ -143,34 +143,44 @@ func createHardwarePanel() (*gtk4.Box, *labelMap, *labelMap, *labelMap, *labelMa
 
 	// GPU Grid
 	gpuGrid := gtk4.NewGrid(
-		gtk4.WithRowSpacing(8),
-		gtk4.WithColumnSpacing(24),
+		gtk4.WithRowSpacing(4),  // Match disk grid spacing
+		gtk4.WithColumnSpacing(12),  // Match disk grid spacing
 		gtk4.WithRowHomogeneous(false),
 	)
-	gpuGrid.AddCssClass("info-grid")
+	gpuGrid.AddCssClass("disk-info-grid")
+
+	// Add headers
+	headerLabels := []string{"Property", "Value"}
+	for i, header := range headerLabels {
+		label := gtk4.NewLabel(header)
+		label.AddCssClass("disk-header")
+		gpuGrid.Attach(label, i, 0, 1, 1)
+	}
+
+	// Add a separator row
+	for i := 0; i < len(headerLabels); i++ {
+		separator := gtk4.NewLabel("--------")
+		separator.AddCssClass("disk-separator")
+		gpuGrid.Attach(separator, i, 1, 1, 1)
+	}
 
 	gpuLabels := newLabelMap()
 
+	// Start adding property rows at row 2 (after headers and separator)
 	// GPU Model
-	addInfoRow(gpuGrid, 0, "GPU Model:", "", gpuLabels, "gpu_model")
-
+	addInfoRow(gpuGrid, 2, "GPU Model:", "", gpuLabels, "gpu_model")
 	// GPU Vendor
-	addInfoRow(gpuGrid, 1, "GPU Vendor:", "", gpuLabels, "gpu_vendor")
-
+	addInfoRow(gpuGrid, 3, "GPU Vendor:", "", gpuLabels, "gpu_vendor")
 	// GPU Renderer
-	addInfoRow(gpuGrid, 2, "GPU Renderer:", "", gpuLabels, "gpu_renderer")
-
+	addInfoRow(gpuGrid, 4, "GPU Renderer:", "", gpuLabels, "gpu_renderer")
 	// GPU Driver
-	addInfoRow(gpuGrid, 3, "GPU Driver:", "", gpuLabels, "gpu_driver")
-
+	addInfoRow(gpuGrid, 5, "GPU Driver:", "", gpuLabels, "gpu_driver")
 	// GPU OpenGL Version
-	addInfoRow(gpuGrid, 4, "OpenGL Version:", "", gpuLabels, "gpu_gl_version")
-
+	addInfoRow(gpuGrid, 6, "OpenGL Version:", "", gpuLabels, "gpu_gl_version")
 	// GPU Memory (only for NVIDIA GPUs)
-	addInfoRow(gpuGrid, 5, "GPU Memory:", "", gpuLabels, "gpu_memory")
-
+	addInfoRow(gpuGrid, 7, "GPU Memory:", "", gpuLabels, "gpu_memory")
 	// GPU Utilization (only for NVIDIA GPUs)
-	addInfoRow(gpuGrid, 6, "GPU Utilization:", "", gpuLabels, "gpu_utilization")
+	addInfoRow(gpuGrid, 8, "GPU Utilization:", "", gpuLabels, "gpu_utilization")
 
 	gpuCard.Append(gpuGrid)
 	panel.Append(gpuCard)
@@ -234,7 +244,7 @@ func createHardwarePanel() (*gtk4.Box, *labelMap, *labelMap, *labelMap, *labelMa
 	initialGrid.AddCssClass("disk-info-grid")
 
 	// Add column headers to the grid
-	headerLabels := []string{"Device", "Size", "Used", "Avail", "Use%", "Mount Point"}
+	headerLabels = []string{"Device", "Size", "Used", "Avail", "Use%", "Mount Point"}
 	for i, header := range headerLabels {
 		label := gtk4.NewLabel(header)
 		label.AddCssClass("disk-header")
@@ -470,4 +480,3 @@ func createMainLayout(win *gtk4.Window) *gtk4.Box {
 
 	return mainBox
 }
-

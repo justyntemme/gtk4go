@@ -161,6 +161,14 @@ func refreshCPUInfo(labels *labelMap) {
 
 // refreshGPUInfo updates the GPU information labels
 func refreshGPUInfo(labels *labelMap) {
+	// Helper function to truncate long text
+	truncateText := func(text string, maxLength int) string {
+		if len(text) > maxLength {
+			return text[:maxLength-3] + "..."
+		}
+		return text
+	}
+
 	// Try to get GPU information using lspci
 	if _, err := executeCommand("which", "lspci"); err == nil {
 		// Extract GPU info using grep
@@ -172,7 +180,8 @@ func refreshGPUInfo(labels *labelMap) {
 				// Extract GPU name from the first line
 				parts := strings.SplitN(lines[0], ":", 2)
 				if len(parts) >= 2 {
-					labels.update("gpu_model", strings.TrimSpace(parts[1]))
+					model := strings.TrimSpace(parts[1])
+					labels.update("gpu_model", truncateText(model, 35))
 				}
 			}
 		} else {
@@ -189,7 +198,8 @@ func refreshGPUInfo(labels *labelMap) {
 		if vendor, err := executeCommand("bash", "-c", vendorCmd); err == nil {
 			parts := strings.SplitN(vendor, ":", 2)
 			if len(parts) >= 2 {
-				labels.update("gpu_vendor", strings.TrimSpace(parts[1]))
+				vendorText := strings.TrimSpace(parts[1])
+				labels.update("gpu_vendor", truncateText(vendorText, 30))
 			}
 		}
 
@@ -198,7 +208,8 @@ func refreshGPUInfo(labels *labelMap) {
 		if renderer, err := executeCommand("bash", "-c", rendererCmd); err == nil {
 			parts := strings.SplitN(renderer, ":", 2)
 			if len(parts) >= 2 {
-				labels.update("gpu_renderer", strings.TrimSpace(parts[1]))
+				rendererText := strings.TrimSpace(parts[1])
+				labels.update("gpu_renderer", truncateText(rendererText, 30))
 			}
 		}
 
@@ -207,7 +218,8 @@ func refreshGPUInfo(labels *labelMap) {
 		if version, err := executeCommand("bash", "-c", versionCmd); err == nil {
 			parts := strings.SplitN(version, ":", 2)
 			if len(parts) >= 2 {
-				labels.update("gpu_gl_version", strings.TrimSpace(parts[1]))
+				versionText := strings.TrimSpace(parts[1])
+				labels.update("gpu_gl_version", truncateText(versionText, 30))
 			}
 		}
 	} else {
@@ -220,9 +232,13 @@ func refreshGPUInfo(labels *labelMap) {
 		if nvInfo, err := executeCommand("nvidia-smi", "--query-gpu=name,driver_version,memory.total,utilization.gpu", "--format=csv,noheader"); err == nil {
 			parts := strings.Split(nvInfo, ",")
 			if len(parts) >= 4 {
-				labels.update("gpu_driver", "NVIDIA "+strings.TrimSpace(parts[1]))
-				labels.update("gpu_memory", strings.TrimSpace(parts[2]))
-				labels.update("gpu_utilization", strings.TrimSpace(parts[3]))
+				driverText := "NVIDIA " + strings.TrimSpace(parts[1])
+				memoryText := strings.TrimSpace(parts[2])
+				utilizationText := strings.TrimSpace(parts[3])
+				
+				labels.update("gpu_driver", truncateText(driverText, 30))
+				labels.update("gpu_memory", truncateText(memoryText, 30))
+				labels.update("gpu_utilization", truncateText(utilizationText, 30))
 			}
 		}
 	} else {
@@ -232,7 +248,8 @@ func refreshGPUInfo(labels *labelMap) {
 			if driver, err := executeCommand("bash", "-c", driverCmd); err == nil {
 				parts := strings.SplitN(driver, ":", 2)
 				if len(parts) >= 2 {
-					labels.update("gpu_driver", strings.TrimSpace(parts[1]))
+					driverText := strings.TrimSpace(parts[1])
+					labels.update("gpu_driver", truncateText(driverText, 30))
 				}
 			}
 		} else {
@@ -734,4 +751,3 @@ func formatBytes(bytes uint64) string {
 		return fmt.Sprintf("%d B", bytes)
 	}
 }
-
