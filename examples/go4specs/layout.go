@@ -30,6 +30,7 @@ func createStatusBar() *gtk4.Box {
 	// Add auto-refresh toggle button
 	autoRefreshButton := gtk4.NewButton("Auto-refresh: On")
 	autoRefreshButton.AddCssClass("toggle-button")
+	autoRefreshButton.AddCssClass("dark-area-btn")
 
 	// Connect button to toggle auto-refresh state
 	autoRefreshButton.ConnectClicked(func() {
@@ -361,6 +362,7 @@ func createHeaderBar() *gtk4.Box {
 	// Refresh button with icon
 	refreshButton := gtk4.NewButton("Refresh")
 	refreshButton.AddCssClass("refresh-button")
+	refreshButton.AddCssClass("dark-area-btn")
 
 	// Connect refresh button click
 	refreshButton.ConnectClicked(func() {
