@@ -66,12 +66,12 @@ func createStatusBar() *gtk4.Box {
 	spacer.SetHExpand(true)
 
 	// Last updated info
-	lastUpdatedLabel := gtk4.NewLabel("Last updated: Never")
-	lastUpdatedLabel.AddCssClass("update-time")
+	// lastUpdatedLabel := gtk4.NewLabel("Last updated: Never")
+	// lastUpdatedLabel.AddCssClass("update-time")
 
 	statusBar.Append(spacer)
 	statusBar.Append(autoRefreshButton)
-	statusBar.Append(lastUpdatedLabel)
+	// statusBar.Append(lastUpdatedLabel)
 
 	return statusBar
 }
@@ -143,8 +143,8 @@ func createHardwarePanel() (*gtk4.Box, *labelMap, *labelMap, *labelMap, *labelMa
 
 	// GPU Grid
 	gpuGrid := gtk4.NewGrid(
-		gtk4.WithRowSpacing(4),  // Match disk grid spacing
-		gtk4.WithColumnSpacing(12),  // Match disk grid spacing
+		gtk4.WithRowSpacing(4),     // Match disk grid spacing
+		gtk4.WithColumnSpacing(12), // Match disk grid spacing
 		gtk4.WithRowHomogeneous(false),
 	)
 	gpuGrid.AddCssClass("disk-info-grid")
@@ -480,3 +480,4 @@ func createMainLayout(win *gtk4.Window) *gtk4.Box {
 
 	return mainBox
 }
+
