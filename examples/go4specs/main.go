@@ -46,6 +46,7 @@ var (
 	cpuLabels          *labelMap
 	memoryLabels       *labelMap
 	diskLabels         *labelMap
+	gpuLabels          *labelMap // Added for GPU information
 	statusLabel        *gtk4.Label
 	autoRefreshEnabled bool = true
 	isRefreshing       bool = false
