@@ -1,3 +1,3 @@
 # TODO
 Build a project that takes all objects and funtions that implement that object and create a chart. probably in python for the ui part
-
+set VExpand on scrolledwindow

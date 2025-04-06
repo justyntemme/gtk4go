@@ -94,6 +94,20 @@ func WithPropagateNaturalHeight(propagate bool) ScrolledWindowOption {
 	}
 }
 
+// WithHExpand sets whether the scrolled window expands horizontally
+func WithHExpand(expand bool) ScrolledWindowOption {
+	return func(sw *ScrolledWindow) {
+		sw.SetHExpand(expand)
+	}
+}
+
+// WithVExpand sets whether the scrolled window expands vertically
+func WithVExpand(expand bool) ScrolledWindowOption {
+	return func(sw *ScrolledWindow) {
+		sw.SetVExpand(expand)
+	}
+}
+
 // SetChild sets the child widget of the scrolled window
 func (sw *ScrolledWindow) SetChild(child Widget) {
 	C.gtk_scrolled_window_set_child(
