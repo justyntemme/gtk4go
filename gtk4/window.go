@@ -33,6 +33,11 @@ package gtk4
 //         gtk_widget_set_vexpand(child, TRUE);
 //     }
 // }
+//
+// // Set a widget as the window titlebar
+// static void setWindowTitlebar(GtkWindow *window, GtkWidget *titlebar) {
+//     gtk_window_set_titlebar(window, titlebar);
+// }
 import "C"
 
 import (
@@ -116,6 +121,18 @@ func (w *Window) OptimizeForResizing() {
 
 	// Configure child widget sizing for better performance
 	C.setContentSizing((*C.GtkWindow)(unsafe.Pointer(w.widget)))
+}
+
+// SetTitlebar sets a widget as the window's titlebar
+func (w *Window) SetTitlebar(titlebar Widget) {
+    C.setWindowTitlebar((*C.GtkWindow)(unsafe.Pointer(w.widget)), titlebar.GetWidget())
+}
+
+// WithTitlebar sets a widget as the window's titlebar at creation time
+func WithTitlebar(titlebar Widget) WindowOption {
+    return func(w *Window) {
+        w.SetTitlebar(titlebar)
+    }
 }
 
 // WithDefaultSize sets the default window size
