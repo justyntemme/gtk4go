@@ -83,7 +83,7 @@ func main() {
 	// Create application
 	app := gtk4.NewApplication(APP_ID)
 	appInstance = app // Store application instance globally
-	
+
 	// Create the refresh action
 	refreshAction := gtk4.NewAction("refresh", func() {
 		refreshAllData()
@@ -120,3 +120,7 @@ func main() {
 	// Run the application
 	os.Exit(app.Run())
 }
+
+// Functions for refreshing data and other operations will be here
+// I'm omitting them as they are part of the original code and not changed
+
