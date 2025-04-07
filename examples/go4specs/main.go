@@ -121,6 +121,3 @@ func main() {
 	os.Exit(app.Run())
 }
 
-// Functions for refreshing data and other operations will be here
-// I'm omitting them as they are part of the original code and not changed
-
