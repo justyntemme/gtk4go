@@ -256,17 +256,20 @@ func loadAppStyles() error {
 		
 		.info-grid {
 			margin: 8px 0;
+			width: 100%; /* Ensure grid takes full width */
 		}
 		
 		.info-key {
 			font-weight: normal;
 			color: #707070;
 			padding-right: 16px;
+			text-align: left;
 		}
 		
 		.info-value {
 			font-weight: bold;
 			color: #303030;
+			text-align: left;
 		}
 		
 		.disk-info {

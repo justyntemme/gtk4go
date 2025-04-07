@@ -1,3 +1,4 @@
+// Package main provides the layout functionality for the system info application
 package main
 
 import (
@@ -21,6 +22,7 @@ func addInfoRow(grid *gtk4.Grid, row int, key string, value string, labels *labe
 
 	valueLabel := gtk4.NewLabel(value)
 	valueLabel.AddCssClass("info-value")
+	valueLabel.SetHExpand(true) // Allow value labels to expand horizontally
 	grid.Attach(valueLabel, 1, row, 1, 1)
 
 	labels.add(labelKey, valueLabel)
@@ -69,6 +71,68 @@ func createStatusBar() *gtk4.Box {
 	statusBar.Append(autoRefreshButton)
 
 	return statusBar
+}
+
+// createSystemPanel builds the system information panel
+func createSystemPanel() (*gtk4.Box, *labelMap) {
+	// Create main container
+	panel := gtk4.NewBox(gtk4.OrientationVertical, 16)
+	panel.AddCssClass("content-panel")
+
+	// Section title
+	titleLabel := gtk4.NewLabel("System Information")
+	titleLabel.AddCssClass("panel-title")
+	panel.Append(titleLabel)
+
+	// Create info card
+	card := gtk4.NewBox(gtk4.OrientationVertical, 8)
+	card.AddCssClass("info-card")
+	card.SetHExpand(true) // Ensure card expands to full width
+
+	// Create grid for info items - now with equal column width
+	grid := gtk4.NewGrid(
+		gtk4.WithRowSpacing(8),
+		gtk4.WithColumnSpacing(24),
+		gtk4.WithRowHomogeneous(false),
+		gtk4.WithColumnHomogeneous(true), // Make columns equal width
+	)
+	grid.AddCssClass("info-grid")
+	grid.SetHExpand(true) // Ensure grid fills the card horizontally
+
+	// Add labels map to store references
+	labels := newLabelMap()
+
+	// OS Name
+	addInfoRow(grid, 0, "OS Name:", "", labels, "os_name")
+
+	// Kernel Version
+	addInfoRow(grid, 1, "Kernel Version:", "", labels, "kernel_version")
+
+	// Distribution
+	addInfoRow(grid, 2, "Distribution:", "", labels, "distribution")
+
+	// Architecture
+	addInfoRow(grid, 3, "Architecture:", "", labels, "architecture")
+
+	// Hostname
+	addInfoRow(grid, 4, "Hostname:", "", labels, "hostname")
+
+	// Uptime
+	addInfoRow(grid, 5, "Uptime:", "", labels, "uptime")
+
+	// User
+	addInfoRow(grid, 6, "Current User:", "", labels, "user")
+
+	// Shell
+	addInfoRow(grid, 7, "Default Shell:", "", labels, "shell")
+
+	// Add grid to card
+	card.Append(grid)
+
+	// Add card to panel
+	panel.Append(card)
+
+	return panel, labels
 }
 
 // createHardwarePanel builds the hardware information panel
@@ -354,65 +418,6 @@ func createHardwarePanel() (*gtk4.Box, *labelMap, *labelMap, *labelMap, *labelMa
 	containerBox.Append(scrollWin)
 
 	return containerBox, cpuLabels, memoryLabels, diskLabels, gpuLabels
-}
-
-// createSystemPanel builds the system information panel
-func createSystemPanel() (*gtk4.Box, *labelMap) {
-	// Create main container
-	panel := gtk4.NewBox(gtk4.OrientationVertical, 16)
-	panel.AddCssClass("content-panel")
-
-	// Section title
-	titleLabel := gtk4.NewLabel("System Information")
-	titleLabel.AddCssClass("panel-title")
-	panel.Append(titleLabel)
-
-	// Create info card
-	card := gtk4.NewBox(gtk4.OrientationVertical, 8)
-	card.AddCssClass("info-card")
-
-	// Create grid for info items
-	grid := gtk4.NewGrid(
-		gtk4.WithRowSpacing(8),
-		gtk4.WithColumnSpacing(24),
-		gtk4.WithRowHomogeneous(false),
-	)
-	grid.AddCssClass("info-grid")
-
-	// Add labels map to store references
-	labels := newLabelMap()
-
-	// OS Name
-	addInfoRow(grid, 0, "OS Name:", "", labels, "os_name")
-
-	// Kernel Version
-	addInfoRow(grid, 1, "Kernel Version:", "", labels, "kernel_version")
-
-	// Distribution
-	addInfoRow(grid, 2, "Distribution:", "", labels, "distribution")
-
-	// Architecture
-	addInfoRow(grid, 3, "Architecture:", "", labels, "architecture")
-
-	// Hostname
-	addInfoRow(grid, 4, "Hostname:", "", labels, "hostname")
-
-	// Uptime
-	addInfoRow(grid, 5, "Uptime:", "", labels, "uptime")
-
-	// User
-	addInfoRow(grid, 6, "Current User:", "", labels, "user")
-
-	// Shell
-	addInfoRow(grid, 7, "Default Shell:", "", labels, "shell")
-
-	// Add grid to card
-	card.Append(grid)
-
-	// Add card to panel
-	panel.Append(card)
-
-	return panel, labels
 }
 
 // createSidebar builds the navigation sidebar
