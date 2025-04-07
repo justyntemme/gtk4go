@@ -509,23 +509,19 @@ func createMainLayout(win *gtk4.Window) *gtk4.Box {
 		gtk4.WithTitle(TITLE),
 	)
 
-	// Create a menu button for the header bar
-	menuButton := gtk4.NewMenuButton()
-	menuButton.SetIconName("emblem-system-symbolic") // Standard GTK gear icon
+	// Create a refresh button with the standard refresh icon
+	refreshButton := gtk4.NewButton("")                // Empty label, using icon only
+	refreshButton.SetIconName("view-refresh-symbolic") // Standard GTK refresh icon
+	refreshButton.SetTooltipText("Refresh system information")
+	refreshButton.AddCssClass("headerbar-refresh-button") // Add specific class for styling
 
-	// Create menu model for the menu button
-	menu := gtk4.NewMenu()
+	// Connect the refresh button to our refresh action
+	refreshButton.ConnectClicked(func() {
+		refreshAllData()
+	})
 
-	// Add "Refresh" menu item
-	refreshItem := gtk4.NewMenuItem("Refresh", "app.refresh")
-	menu.AppendItem(refreshItem)
-
-	// Create a popover menu for the button
-	popoverMenu := gtk4.NewPopoverMenu(menu)
-	menuButton.SetPopover(popoverMenu)
-
-	// Add the menu button to the end of the header bar
-	headerBar.PackEnd(menuButton)
+	// Add the refresh button to the header bar (at the end position)
+	headerBar.PackEnd(refreshButton)
 
 	// Set the header bar as the window's titlebar
 	win.SetTitlebar(headerBar)
