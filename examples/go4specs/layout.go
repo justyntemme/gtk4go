@@ -381,6 +381,7 @@ func createHardwarePanel() (*gtk4.Box, *labelMap, *labelMap, *labelMap, *labelMa
 	for i, header := range diskHeaders {
 		label := gtk4.NewLabel(header)
 		label.AddCssClass("disk-header")
+		label.SetHExpand(true)
 		initialGrid.Attach(label, i, 0, 1, 1)
 	}
 
@@ -388,6 +389,7 @@ func createHardwarePanel() (*gtk4.Box, *labelMap, *labelMap, *labelMap, *labelMa
 	for i := 0; i < len(diskHeaders); i++ {
 		separator := gtk4.NewLabel("--------")
 		separator.AddCssClass("disk-separator")
+		separator.SetHExpand(true)
 		initialGrid.Attach(separator, i, 1, 1, 1)
 	}
 
@@ -579,3 +581,4 @@ func createMainLayout(win *gtk4.Window) *gtk4.Box {
 
 	return mainBox
 }
+

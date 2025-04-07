@@ -581,6 +581,7 @@ func createEmptyDiskGrid(message string) *gtk4.Grid {
 	for i, header := range headerLabels {
 		label := gtk4.NewLabel(header)
 		label.AddCssClass("disk-header")
+		label.SetHExpand(true)
 		grid.Attach(label, i, 0, 1, 1)
 	}
 
@@ -591,6 +592,7 @@ func createEmptyDiskGrid(message string) *gtk4.Grid {
 	} else {
 		messageLabel.AddCssClass("disk-info-message")
 	}
+	messageLabel.SetHExpand(true)
 	grid.Attach(messageLabel, 0, 1, 6, 1)
 
 	return grid
@@ -610,6 +612,7 @@ func createDiskGridWithHeaders() *gtk4.Grid {
 	for i, header := range headerLabels {
 		label := gtk4.NewLabel(header)
 		label.AddCssClass("disk-header")
+		label.SetHExpand(true)
 		grid.Attach(label, i, 0, 1, 1)
 	}
 
@@ -617,6 +620,7 @@ func createDiskGridWithHeaders() *gtk4.Grid {
 	for i := 0; i < len(headerLabels); i++ {
 		separator := gtk4.NewLabel("--------")
 		separator.AddCssClass("disk-separator")
+		separator.SetHExpand(true)
 		grid.Attach(separator, i, 1, 1, 1)
 	}
 
@@ -629,6 +633,7 @@ func addDiskRowToGrid(grid *gtk4.Grid, rowIndex int, fields []string) {
 	device := fields[0]
 	deviceLabel := gtk4.NewLabel(device)
 	deviceLabel.AddCssClass("disk-device")
+	deviceLabel.SetHExpand(true)
 
 	// Add tooltip if device name is long
 	if len(device) > 16 {
