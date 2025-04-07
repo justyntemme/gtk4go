@@ -12,42 +12,117 @@ func loadAppStyles() error {
 		window {
 			background-color: #f5f5f5;
 		}
-    /* ======== GPU INFO GRID STYLING ======== */
-    .disk-info-grid {
-      background-color: #f7f7f7;
-      border-radius: 4px;
-      padding: 8px;
-      margin: 4px 0;
+		
+		/* Header bar styling with blue color in all states */
+		headerbar,
+		headerbar:backdrop,
+		window .titlebar,
+		window:backdrop .titlebar,
+		window:active .titlebar,
+		window .titlebar headerbar,
+		window:backdrop .titlebar headerbar,
+		window:active .titlebar headerbar {
+			background-color: #3584e4;
+			background-image: none;
+			color: white;
+		}
+		
+		/* Make all headerbar buttons consistent */
+		headerbar button, 
+		headerbar button.image-button,
+		headerbar button.titlebutton,
+		.headerbar-refresh-button {
+			background: none;
+			background-color: transparent;
+			background-image: none;
+			border: none;
+			border-radius: 50%;
+			box-shadow: none;
+			outline: none;
+			min-width: 16px;
+			min-height: 16px;
+			padding: 8px;
+			margin: 0 2px;
+		}
+		
+		/* Ensure consistent hover effects */
+		headerbar button:hover, 
+		headerbar button.image-button:hover,
+		headerbar button.titlebutton:hover,
+		.headerbar-refresh-button:hover {
+			background-color: rgba(255, 255, 255, 0.1);
+			border: none;
+			box-shadow: none;
+		}
+		
+		/* Consistent active/pressed effects */
+		headerbar button:active, 
+		headerbar button.image-button:active,
+		headerbar button.titlebutton:active,
+		.headerbar-refresh-button:active {
+			background-color: rgba(255, 255, 255, 0.2);
+			border: none;
+			box-shadow: none;
+		}
+		
+		/* Ensure black icon for our refresh button */
+		.headerbar-refresh-button image {
+			color: white;
+		}
+
+    headerbar button image ,
+    headerbar button.image-button image,
+    headerbar button.titlebutton image{
+      color: white;
     }
-
-.disk-header {
-    font-weight: bold;
-    color: #303030;
-    padding: 4px 0;
-}
-
-.disk-separator {
-    color: #777777;
-}
-
-.disk-device, .info-key {
-    font-family: monospace;
-    font-weight: bold;
-    padding: 3px 0;
-}
-
-.info-value {
-    font-family: monospace;
-    padding: 3px 0;
-}
-
-/* Add overflow handling for long text values */
-.info-value, .disk-mount {
-    text-overflow: ellipsis;
-    overflow: hidden;
-    white-space: nowrap;
-    max-width: 300px;
-}		
+		
+		/* Clean up focus styles */
+		headerbar button:focus, 
+		headerbar button.image-button:focus,
+		headerbar button.titlebutton:focus,
+		.headerbar-refresh-button:focus {
+			border: none;
+			box-shadow: none;
+			outline: none;
+		}
+		
+		/* ======== DISK INFO GRID STYLING ======== */
+		.disk-info-grid {
+			background-color: #f7f7f7;
+			border-radius: 4px;
+			padding: 8px;
+			margin: 4px 0;
+		}
+		
+		.disk-header {
+			font-weight: bold;
+			color: #303030;
+			padding: 4px 0;
+		}
+		
+		.disk-separator {
+			color: #777777;
+		}
+		
+		.disk-device, .info-key {
+			font-family: monospace;
+			font-weight: bold;
+			padding: 3px 0;
+		}
+		
+		.info-value {
+			font-family: monospace;
+			padding: 3px 0;
+		}
+		
+		/* Add overflow handling for long text values */
+		.info-value, .disk-mount {
+			text-overflow: ellipsis;
+			overflow: hidden;
+			white-space: nowrap;
+			max-width: 300px;
+		}		
+		
 		/* ======== BUTTON STYLING ======== */
 		/* Default button styling - light background with dark text */
 		.default-btn {
@@ -101,25 +176,10 @@ func loadAppStyles() error {
 			background-color: #4a94ea;
 		}
 		
-		.refresh-button {
-			background-color: rgba(0, 0, 0, 0.2);
-			border-radius: 4px;
-			padding: 8px 16px;
-			border: none;
-		}
-		
-		.refresh-button label {
-			color: black;
-		}
-		
-		.refresh-button:hover {
-			background-color: rgba(0, 0, 0, 0.3);
-		}
-		
 		.toggle-button {
 			background-color: rgba(0, 0, 0, 0.3);
 			border-radius: 4px;
-      color: black;
+			color: black;
 			padding: 4px 8px;
 			font-size: 12px;
 			border: none;
@@ -131,20 +191,6 @@ func loadAppStyles() error {
 		
 		.toggle-button:hover {
 			background-color: rgba(0, 0, 0, 0.4);
-		}
-		
-		/* ======== HEADER STYLING ======== */
-		.header-bar {
-			background-color: #3584e4;
-			color: white;
-			padding: 8px 16px;
-			min-height: 48px;
-		}
-		
-		.header-title {
-			font-size: 18px;
-			font-weight: bold;
-			color: white;
 		}
 		
 		/* ======== SIDEBAR STYLING ======== */
@@ -306,8 +352,4 @@ func loadAppStyles() error {
 		gtk4.AddProviderForDisplay(cssProvider, 600)
 	}
 	return nil
-}
-
-func testing() {
-	fmt.Println("hello")
 }
