@@ -39,7 +39,6 @@ func loadAppStyles() error {
 			border-radius: 50%;
 			box-shadow: none;
 			outline: none;
-			min-width: 16px;
 			min-height: 16px;
 			padding: 8px;
 			margin: 0 2px;
@@ -115,15 +114,7 @@ func loadAppStyles() error {
 			padding: 3px 0;
 		}
 		
-		/* Add overflow handling for long text values */
-		.info-value, .disk-mount {
-			text-overflow: ellipsis;
-			overflow: hidden;
-			white-space: nowrap;
-			max-width: 300px;
-		}		
-		
-		/* ======== BUTTON STYLING ======== */
+				/* ======== BUTTON STYLING ======== */
 		/* Default button styling - light background with dark text */
 		.default-btn {
 			background-color: #e8e8e8; 
@@ -196,7 +187,6 @@ func loadAppStyles() error {
 		/* ======== SIDEBAR STYLING ======== */
 		.sidebar {
 			background-color: #323232;
-			min-width: 200px;
 			padding: 0;
 		}
 		
@@ -206,7 +196,6 @@ func loadAppStyles() error {
 			border-left: 4px solid transparent;
 			padding: 16px;
 			margin: 0;
-			text-align: left;
 		}
 		
 		.sidebar-button label {
@@ -256,20 +245,17 @@ func loadAppStyles() error {
 		
 		.info-grid {
 			margin: 8px 0;
-			width: 100%; /* Ensure grid takes full width */
 		}
 		
 		.info-key {
 			font-weight: normal;
 			color: #707070;
 			padding-right: 16px;
-			text-align: left;
 		}
 		
 		.info-value {
 			font-weight: bold;
 			color: #303030;
-			text-align: left;
 		}
 		
 		.disk-info {
@@ -308,9 +294,7 @@ func loadAppStyles() error {
 			padding: 3px 0;
 		}
 
-		.disk-mount {
-			text-align: left;
-		}
+		
 
 		.disk-usage-normal {
 			color: #287c37;
