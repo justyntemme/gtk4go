@@ -6,31 +6,49 @@ package gtk4
 // #include <gtk/gtk.h>
 // #include <stdlib.h>
 //
-// // Helper function to enable frame clock synchronization
+// // Helper function to enable frame clock synchronization with platform-specific optimizations
 // static void setWindowRenderingMode(GtkWindow* window) {
-//     // Enable hardware acceleration for the window
+//     // Get surface for the window
 //     GdkSurface* surface = gtk_native_get_surface(GTK_NATIVE(window));
-//     if (surface != NULL) {
-//         // Queue surface for rendering - proper way to ensure updates in GTK4
-//         gdk_surface_queue_render(surface);
-//
-//         // In GTK4, we can improve rendering performance by:
-//         // 1. Setting frame clock synchronization
-//         GdkFrameClock* frame_clock = gdk_surface_get_frame_clock(surface);
-//         if (frame_clock != NULL) {
-//             // Request updates on the frame clock for smoother animation
-//             gdk_frame_clock_begin_updating(frame_clock);
-//         }
+//     if (surface == NULL) {
+//         return;
 //     }
+//
+//     // Queue surface for rendering - proper way to ensure updates in GTK4
+//     gdk_surface_queue_render(surface);
+//
+// #ifdef __APPLE__
+//     // macOS-specific rendering optimizations
+//     // Use Cairo renderer which is more stable on macOS
+//     // Avoid excessive animations and transitions
+//     g_object_set(gtk_settings_get_default(), 
+//                 "gtk-enable-animations", FALSE, 
+//                 NULL);
+// #else
+//     // Linux-specific rendering optimizations
+//     // Set frame clock synchronization for smoother animations on Linux
+//     GdkFrameClock* frame_clock = gdk_surface_get_frame_clock(surface);
+//     if (frame_clock != NULL) {
+//         gdk_frame_clock_begin_updating(frame_clock);
+//     }
+// #endif
 // }
 //
-// // Set content sizing mode for more efficient resizing
+// // Set content sizing mode for more efficient resizing with platform specifics
 // static void setContentSizing(GtkWindow* window) {
 //     // Use natural sizing for better resize performance
 //     GtkWidget* child = gtk_window_get_child(window);
 //     if (child != NULL) {
 //         gtk_widget_set_hexpand(child, TRUE);
 //         gtk_widget_set_vexpand(child, TRUE);
+//
+// #ifdef __APPLE__
+//         // macOS needs specific margin handling for window decorations
+//         gtk_widget_set_margin_start(child, 0);
+//         gtk_widget_set_margin_end(child, 0);
+//         gtk_widget_set_margin_top(child, 0);
+//         gtk_widget_set_margin_bottom(child, 0);
+// #endif
 //     }
 // }
 //
@@ -41,21 +59,8 @@ package gtk4
 import "C"
 
 import (
-	"os"
 	"unsafe"
 )
-
-func init() {
-	// Set environment variables to enable hardware acceleration
-	// These must be set before the application starts for best effect
-	// but we set them here to make sure they're present
-	os.Setenv("GSK_RENDERER", "gl")
-	os.Setenv("GDK_GL", "always")
-
-	// On some systems, Cairo may be more stable than GL
-	// Uncomment if GL causes issues:
-	// os.Setenv("GSK_RENDERER", "cairo")
-}
 
 // WindowOption is a function that configures a window
 type WindowOption func(*Window)
