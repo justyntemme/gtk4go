@@ -30,7 +30,11 @@ func Initialize() {
 		return
 	}
 
-	// Store the UI thread ID
+	// Platform-specific initialization is performed in the init function
+	// of the platform-specific files (thread_darwin.go, thread_linux.go)
+	
+	// Store the UI thread ID - this must be done on the main thread
+	// Note that on macOS, the OS thread is already locked by the platform-specific init
 	uiThreadID = threadID()
 
 	// Start the dispatch queue processor
