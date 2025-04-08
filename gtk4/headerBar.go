@@ -15,13 +15,25 @@ package gtk4
 //     gtk_header_bar_set_show_title_buttons(header_bar, setting);
 // }
 //
-// // In GTK4, we need to use the properties to set title and subtitle
-// static void setHeaderBarTitleProperty(GtkHeaderBar *header_bar, const char *title) {
-//     g_object_set(G_OBJECT(header_bar), "title", title, NULL);
-// }
-//
-// static void setHeaderBarSubtitleProperty(GtkHeaderBar *header_bar, const char *subtitle) {
-//     g_object_set(G_OBJECT(header_bar), "subtitle", subtitle, NULL);
+// // In GTK4, we need to use label widgets for title and subtitle
+// static void setHeaderBarTitle(GtkHeaderBar *header_bar, const char *title) {
+//     // Remove any existing title widget
+//     GtkWidget *current = gtk_header_bar_get_title_widget(header_bar);
+//     if (current != NULL) {
+//         gtk_header_bar_set_title_widget(header_bar, NULL);
+//     }
+//     
+//     // Create a new label with the title
+//     GtkWidget *label = gtk_label_new(title);
+//     // Make it bold and larger
+//     PangoAttrList *attrs = pango_attr_list_new();
+//     pango_attr_list_insert(attrs, pango_attr_weight_new(PANGO_WEIGHT_BOLD));
+//     pango_attr_list_insert(attrs, pango_attr_scale_new(1.2));
+//     gtk_label_set_attributes(GTK_LABEL(label), attrs);
+//     pango_attr_list_unref(attrs);
+//     
+//     // Set it as the title widget
+//     gtk_header_bar_set_title_widget(header_bar, label);
 // }
 //
 // static void setHeaderBarTitleWidget(GtkHeaderBar *header_bar, GtkWidget *title_widget) {
@@ -88,16 +100,7 @@ func WithTitle(title string) HeaderBarOption {
     return func(hb *HeaderBar) {
         cTitle := C.CString(title)
         defer C.free(unsafe.Pointer(cTitle))
-        C.setHeaderBarTitleProperty((*C.GtkHeaderBar)(unsafe.Pointer(hb.widget)), cTitle)
-    }
-}
-
-// WithSubtitle sets the header bar subtitle
-func WithSubtitle(subtitle string) HeaderBarOption {
-    return func(hb *HeaderBar) {
-        cSubtitle := C.CString(subtitle)
-        defer C.free(unsafe.Pointer(cSubtitle))
-        C.setHeaderBarSubtitleProperty((*C.GtkHeaderBar)(unsafe.Pointer(hb.widget)), cSubtitle)
+        C.setHeaderBarTitle((*C.GtkHeaderBar)(unsafe.Pointer(hb.widget)), cTitle)
     }
 }
 
@@ -132,14 +135,7 @@ func (hb *HeaderBar) SetShowTitleButtons(show bool) {
 func (hb *HeaderBar) SetTitle(title string) {
     cTitle := C.CString(title)
     defer C.free(unsafe.Pointer(cTitle))
-    C.setHeaderBarTitleProperty((*C.GtkHeaderBar)(unsafe.Pointer(hb.widget)), cTitle)
-}
-
-// SetSubtitle sets the header bar subtitle
-func (hb *HeaderBar) SetSubtitle(subtitle string) {
-    cSubtitle := C.CString(subtitle)
-    defer C.free(unsafe.Pointer(cSubtitle))
-    C.setHeaderBarSubtitleProperty((*C.GtkHeaderBar)(unsafe.Pointer(hb.widget)), cSubtitle)
+    C.setHeaderBarTitle((*C.GtkHeaderBar)(unsafe.Pointer(hb.widget)), cTitle)
 }
 
 // SetTitleWidget sets a custom widget as the header bar title
