@@ -21,6 +21,16 @@ var (
 	initMutex   sync.Mutex
 )
 
+// RegisterIdleHandler allows the GTK package to register its implementation
+// of the idle function that executes callbacks on the UI thread
+var RegisterIdleHandler func(fn func())
+
+// Global variables to manage idle functions
+var (
+	idleFunctions = sync.Map{}
+	nextIdleKey   = atomic.Uint64{}
+)
+
 // Initialize initializes the UI thread handling system
 func Initialize() {
 	initMutex.Lock()
@@ -36,6 +46,9 @@ func Initialize() {
 	// Store the UI thread ID - this must be done on the main thread
 	// Note that on macOS, the OS thread is already locked by the platform-specific init
 	uiThreadID = threadID()
+
+	// Initialize platform-specific idle handler
+	initPlatformIdleHandler()
 
 	// Start the dispatch queue processor
 	go processDispatchQueue()
@@ -88,10 +101,6 @@ func processDispatchQueue() {
 		}
 	}
 }
-
-// RegisterIdleHandler allows the GTK package to register its implementation
-// of the idle function that executes callbacks on the UI thread
-var RegisterIdleHandler func(fn func())
 
 // SafeUIOperation executes a function safely on the UI thread
 // and returns when the operation is complete

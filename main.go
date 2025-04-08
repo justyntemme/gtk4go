@@ -56,16 +56,20 @@ func Initialize() error {
 		}
 	}
 
-	// Register the GTK idle handler with the uithread package
-	uithread.RegisterIdleHandler = func(fn func()) {
-		// Get a unique key for this function
-		key := nextIdleKey.Add(1)
+	// Only register the GTK idle handler if no platform-specific handler
+	// has been registered yet. This allows platform-specific code to take
+	// precedence but provides a fallback using GTK's idle mechanism.
+	if uithread.RegisterIdleHandler == nil {
+		uithread.RegisterIdleHandler = func(fn func()) {
+			// Get a unique key for this function
+			key := nextIdleKey.Add(1)
 
-		// Store the function in the idle handles map
-		idleHandles.Store(key, fn)
+			// Store the function in the idle handles map
+			idleHandles.Store(key, fn)
 
-		// Schedule the function to be executed on the UI thread
-		C.addIdleFunction(C.gpointer(uintptr(key)))
+			// Schedule the function to be executed on the UI thread via GTK
+			C.addIdleFunction(C.gpointer(uintptr(key)))
+		}
 	}
 
 	initialized = true
