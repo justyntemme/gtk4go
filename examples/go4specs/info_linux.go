@@ -9,6 +9,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -548,3 +549,4 @@ func refreshGPUInfo(labels *labelMap) {
 		}
 	}
 }
+
