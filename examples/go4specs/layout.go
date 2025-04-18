@@ -2,9 +2,10 @@
 package main
 
 import (
-	"../../gtk4"
 	"fmt"
 	"sync"
+
+	"github.com/justyntemme/gtk4go/gtk4"
 )
 
 // Global variables for disk display
@@ -581,4 +582,3 @@ func createMainLayout(win *gtk4.Window) *gtk4.Box {
 
 	return mainBox
 }
-
