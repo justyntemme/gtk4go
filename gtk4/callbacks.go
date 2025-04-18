@@ -45,7 +45,7 @@ import (
 	"unsafe"
 
 	// Import core uithread package
-	"../core/uithread"
+	"github.com/justyntemme/gtk4go/core/uithread"
 )
 
 // SignalType represents the type of GTK signal
@@ -72,11 +72,11 @@ const (
 
 	// Window signals
 	SignalCloseRequest SignalType = "close-request"
-	
+
 	// Window resize signals
-	SignalResizeStart   SignalType = "resize-start"
-	SignalResizeEnd     SignalType = "resize-end"
-	SignalResizeUpdate  SignalType = "resize-update"
+	SignalResizeStart  SignalType = "resize-start"
+	SignalResizeEnd    SignalType = "resize-end"
+	SignalResizeUpdate SignalType = "resize-update"
 
 	// Dialog signals
 	SignalResponse SignalType = "response"
@@ -92,7 +92,7 @@ const (
 
 	// Action signals - same name as list signal but different context
 	SignalActionActivate SignalType = "activate"
-	
+
 	// Tooltip signals
 	SignalQueryTooltip SignalType = "query-tooltip"
 )
@@ -291,18 +291,18 @@ func GetCallback(objectPtr uintptr, signal SignalType) interface{} {
 
 // getCallbackIDsForSignal returns all callback IDs for a specific object and signal
 func getCallbackIDsForSignal(objectPtr uintptr, signal SignalType) []uint64 {
-    var ids []uint64
-    
-    // Scan all callbacks for matches
-    globalCallbackManager.callbacks.Range(func(id, value interface{}) bool {
-        data := value.(*callbackData)
-        if data.objectPtr == objectPtr && data.signal == signal {
-            ids = append(ids, id.(uint64))
-        }
-        return true
-    })
-    
-    return ids
+	var ids []uint64
+
+	// Scan all callbacks for matches
+	globalCallbackManager.callbacks.Range(func(id, value interface{}) bool {
+		data := value.(*callbackData)
+		if data.objectPtr == objectPtr && data.signal == signal {
+			ids = append(ids, id.(uint64))
+		}
+		return true
+	})
+
+	return ids
 }
 
 // storeObjectCallback stores a callback by object pointer and signal type
@@ -501,7 +501,7 @@ func execCallback(callback interface{}, args ...interface{}) {
 				if li, ok := args[0].(*ListItem); ok {
 					cb(li)
 				} else {
-					DebugLog(DebugLevelError, DebugComponentCallback, 
+					DebugLog(DebugLevelError, DebugComponentCallback,
 						"ListItemCallback called with invalid argument type: %T, expected *ListItem", args[0])
 				}
 			}
@@ -510,7 +510,7 @@ func execCallback(callback interface{}, args ...interface{}) {
 				if li, ok := args[0].(*ListItem); ok {
 					cb(li)
 				} else {
-					DebugLog(DebugLevelError, DebugComponentCallback, 
+					DebugLog(DebugLevelError, DebugComponentCallback,
 						"func(*ListItem) called with invalid argument type: %T, expected *ListItem", args[0])
 				}
 			}
@@ -583,25 +583,25 @@ func callbackHandlerWithParam(object *C.GObject, param C.gpointer, data C.gpoint
 
 	// Check for ListItemCallback specifically
 	if _, isListItemCallback := callbackData.callback.(ListItemCallback); isListItemCallback {
-		DebugLog(DebugLevelInfo, DebugComponentCallback, 
+		DebugLog(DebugLevelInfo, DebugComponentCallback,
 			"Found ListItemCallback, wrapping list item pointer %v", uintptr(param))
-			
+
 		// Create a ListItem wrapper for the GtkListItem pointer
 		listItem := &ListItem{listItem: (*C.GtkListItem)(unsafe.Pointer(param))}
-		
+
 		// Execute the callback with the ListItem
 		execCallback(callbackData.callback, listItem)
 		return
 	}
-	
+
 	// Similarly handle func(*ListItem) type
 	if _, isFuncListItem := callbackData.callback.(func(*ListItem)); isFuncListItem {
-		DebugLog(DebugLevelInfo, DebugComponentCallback, 
+		DebugLog(DebugLevelInfo, DebugComponentCallback,
 			"Found func(*ListItem), wrapping list item pointer %v", uintptr(param))
-			
+
 		// Create a ListItem wrapper for the GtkListItem pointer
 		listItem := &ListItem{listItem: (*C.GtkListItem)(unsafe.Pointer(param))}
-		
+
 		// Execute the callback with the ListItem
 		execCallback(callbackData.callback, listItem)
 		return
@@ -628,12 +628,12 @@ func callbackHandlerWithParam(object *C.GObject, param C.gpointer, data C.gpoint
 		// For ListView activation - check for multiple possible types
 		// First try direct function type
 		if callback, ok := callbackData.callback.(func(int)); ok {
-			DebugLog(DebugLevelInfo, DebugComponentListView, 
+			DebugLog(DebugLevelInfo, DebugComponentListView,
 				"Executing list activate callback for position %d", paramVal)
 			execCallback(callback, paramVal)
 		} else if callback, ok := callbackData.callback.(ListViewActivateCallback); ok {
 			// Then try the specific callback type
-			DebugLog(DebugLevelInfo, DebugComponentListView, 
+			DebugLog(DebugLevelInfo, DebugComponentListView,
 				"Executing ListViewActivateCallback for position %d", paramVal)
 			execCallback(func(pos int) {
 				callback(pos)
@@ -641,21 +641,21 @@ func callbackHandlerWithParam(object *C.GObject, param C.gpointer, data C.gpoint
 		} else {
 			// Log error if neither type matches
 			DebugLog(DebugLevelError, DebugComponentListView,
-				"ListActivate callback has wrong type: %T, expected func(int) or ListViewActivateCallback", 
+				"ListActivate callback has wrong type: %T, expected func(int) or ListViewActivateCallback",
 				callbackData.callback)
 		}
-		
+
 	case callbackData.signal == SignalActionActivate && callbackData.source == SourceAction:
 		// For Action activation
 		if callback, ok := callbackData.callback.(func()); ok {
-			DebugLog(DebugLevelInfo, DebugComponentAction, 
+			DebugLog(DebugLevelInfo, DebugComponentAction,
 				"Executing action activate callback")
 			execCallback(callback)
 		} else {
 			DebugLog(DebugLevelError, DebugComponentAction,
 				"ActionActivate callback has wrong type: %T, expected func()", callbackData.callback)
 		}
-		
+
 	case callbackData.signal == SignalActivate:
 		// For general activation (Entry, etc)
 		if callback, ok := callbackData.callback.(func()); ok {
@@ -664,7 +664,7 @@ func callbackHandlerWithParam(object *C.GObject, param C.gpointer, data C.gpoint
 			DebugLog(DebugLevelError, DebugComponentCallback,
 				"Activate callback has wrong type: %T, expected func()", callbackData.callback)
 		}
-		
+
 	default:
 		// For other cases, try to call with an int parameter
 		if callback, ok := callbackData.callback.(func(int)); ok {
@@ -676,7 +676,7 @@ func callbackHandlerWithParam(object *C.GObject, param C.gpointer, data C.gpoint
 			// Try no parameter callback as last resort
 			execCallback(callback)
 		} else {
-			DebugLog(DebugLevelError, DebugComponentCallback, 
+			DebugLog(DebugLevelError, DebugComponentCallback,
 				"callbackHandlerWithParam: callback has wrong type: %T", callbackData.callback)
 		}
 	}
@@ -714,20 +714,20 @@ func callbackHandlerWithReturn(object *C.GObject, data C.gpointer) C.gboolean {
 func tooltipQueryCallback(widget *C.GtkWidget, x C.gint, y C.gint, keyboardMode C.gboolean, tooltip *C.GtkTooltip, userData C.gpointer) C.gboolean {
 	// Convert userData to callback ID
 	id := uint64(uintptr(userData))
-	
+
 	// Find the callback data
 	value, ok := globalCallbackManager.callbacks.Load(id)
 	if !ok {
-		DebugLog(DebugLevelWarning, DebugComponentTooltip, 
+		DebugLog(DebugLevelWarning, DebugComponentTooltip,
 			"tooltipQueryCallback: callback ID %d not found", id)
 		// Default to showing the tooltip
 		return C.TRUE
 	}
-	
+
 	callbackData := value.(*callbackData)
-	DebugLog(DebugLevelVerbose, DebugComponentTooltip, 
+	DebugLog(DebugLevelVerbose, DebugComponentTooltip,
 		"tooltipQueryCallback: executing callback ID %d for signal %s", id, callbackData.signal)
-	
+
 	// Check for the appropriate callback type (for the UCS)
 	if callback, ok := callbackData.callback.(func(int, int, bool, uintptr) bool); ok {
 		// Execute the callback directly as we need the return value
@@ -737,7 +737,7 @@ func tooltipQueryCallback(widget *C.GtkWidget, x C.gint, y C.gint, keyboardMode 
 			keyboardMode == C.TRUE,
 			uintptr(unsafe.Pointer(tooltip)),
 		)
-		
+
 		if result {
 			return C.TRUE
 		}
@@ -751,16 +751,16 @@ func tooltipQueryCallback(widget *C.GtkWidget, x C.gint, y C.gint, keyboardMode 
 			keyboardMode == C.TRUE,
 			tooltipObj,
 		)
-		
+
 		if result {
 			return C.TRUE
 		}
 		return C.FALSE
 	} else {
-		DebugLog(DebugLevelError, DebugComponentTooltip, 
+		DebugLog(DebugLevelError, DebugComponentTooltip,
 			"tooltipQueryCallback: callback has wrong type: %T", callbackData.callback)
 	}
-	
+
 	// Default to showing the tooltip
 	return C.TRUE
 }
@@ -847,3 +847,4 @@ func StoreDirectCallback(ptr uintptr, signal SignalType, callback interface{}) {
 func RunOnUIThread(fn func()) {
 	uithread.RunOnUIThread(fn)
 }
+
