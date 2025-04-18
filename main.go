@@ -27,7 +27,7 @@ import (
 	"sync/atomic"
 
 	// Import the core uithread package
-	"./core/uithread"
+	"github.com/justyntemme/gtk4go/core/uithread"
 )
 
 // initialized tracks whether GTK has been initialized
@@ -113,9 +113,7 @@ func Events() chan any {
 	return events
 }
 
-var (
-	events = make(chan any, 10)
-)
+var events = make(chan any, 10)
 
 // init initializes the GTK4 library.
 func init() {
