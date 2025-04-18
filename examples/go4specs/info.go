@@ -3,8 +3,6 @@
 package main
 
 import (
-	"../../../gtk4go"
-	"../../gtk4"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,6 +10,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/justyntemme/gtk4go"
+	"github.com/justyntemme/gtk4go/gtk4"
 )
 
 // executeCommand executes a command and returns its output
@@ -551,4 +552,3 @@ func parseMemoryValue(valueStr string) (uint64, uint64) {
 	value, _ := strconv.ParseFloat(valueStr, 64)
 	return uint64(value), multiplier
 }
-

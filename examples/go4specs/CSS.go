@@ -1,8 +1,9 @@
 package main
 
 import (
-	"../../gtk4/"
 	"fmt"
+
+	"github.com/justyntemme/gtk4go/gtk4"
 )
 
 // loadAppStyles loads the CSS styles for the application

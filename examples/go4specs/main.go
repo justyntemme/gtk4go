@@ -1,13 +1,14 @@
 package main
 
 import (
-	"../../../gtk4go"
-	"../../gtk4"
 	"fmt"
 	"os"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/justyntemme/gtk4go"
+	"github.com/justyntemme/gtk4go/gtk4"
 )
 
 // Define constants for styling and sizing
@@ -120,4 +121,3 @@ func main() {
 	// Run the application
 	os.Exit(app.Run())
 }
-
