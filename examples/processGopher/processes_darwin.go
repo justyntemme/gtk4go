@@ -15,7 +15,7 @@ func getSystemMemoryInfo() (total int64, free int64, err error) {
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to get total memory: %v", err)
 	}
-	
+
 	totalStr := strings.TrimSpace(string(output))
 	total, err = strconv.ParseInt(totalStr, 10, 64)
 	if err != nil {
@@ -33,7 +33,7 @@ func getSystemMemoryInfo() (total int64, free int64, err error) {
 	lines := strings.Split(string(output), "\n")
 	pageSize := int64(4096) // Default page size on macOS is 4KB
 	freePages := int64(0)
-	
+
 	for _, line := range lines {
 		if strings.Contains(line, "Pages free:") {
 			parts := strings.Split(line, ":")
@@ -94,12 +94,13 @@ func getCPUUsage() (float64, error) {
 	return 0, fmt.Errorf("could not parse CPU usage from top output")
 }
 
-// getProcessDetails gets additional details about a process on macOS
-func getProcessDetails(pid int64) (map[string]string, error) {
+// getDarwinProcessDetails gets additional details about a process on macOS
+// This is a darwin-specific version that's called by getProcessDetails
+func getDarwinProcessDetails(pid int64) (map[string]string, error) {
 	details := make(map[string]string)
 
 	// Get process info using ps
-	cmd := exec.Command("ps", "-p", strconv.FormatInt(pid, 10), "-o", "pid,ppid,pri,nice,args")
+	cmd := exec.Command("ps", "-p", strconv.FormatInt(pid, 10), "-o", "\"pid,ppid,pri,nice,args\"")
 	output, err := cmd.Output()
 	if err != nil {
 		return details, fmt.Errorf("failed to get process details: %v", err)

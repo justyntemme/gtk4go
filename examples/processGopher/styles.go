@@ -41,6 +41,21 @@ func GetCSS() string {
     color: #e01b24;
 }
 
+.usage-value {
+    font-size: 14px;
+    padding: 10px;
+    margin-bottom: 15px;
+}
+
+.usage-normal {
+    color: #2e3436;
+}
+
+.usage-high {
+    color: #e01b24;
+    font-weight: bold;
+}
+
 .refresh-button {
     margin-left: 5px;
     margin-right: 5px;

@@ -23,13 +23,15 @@ const (
 
 // Global variables for data and UI state
 var (
-	processTreeView  *gtk4.GtkTreeView
-	processListStore *gtk4.GtkListStore
+	processListView  *gtk4.ListView
+	processListModel *gtk4.StringList
+	selectionModel   *gtk4.SingleSelection
 	refreshTimer     *time.Timer
 	statusLabel      *gtk4.Label
 	columnSortOrder  = make(map[int]bool) // true for ascending, false for descending
 	statusMutex      sync.Mutex
 	selectedPID      int64 = -1
+	processCache     []ProcessInfo // Cache of process data for selection and sorting
 )
 
 // Column indices for the process list
@@ -100,29 +102,27 @@ func main() {
 // createMainLayout creates the main layout of the application
 func createMainLayout() *gtk4.Box {
 	// Create main vertical box
-	mainBox := gtk4.NewBox(gtk4.OrientationVertical, 0)
-	mainBox.SetMarginTop(10)
-	mainBox.SetMarginBottom(10)
-	mainBox.SetMarginStart(10)
-	mainBox.SetMarginEnd(10)
+	mainBox := gtk4.NewBox(gtk4.OrientationVertical, 10)
 
 	// Create header bar
 	headerBar := createHeaderBar()
 	mainBox.Append(headerBar)
 
-	// Create notebook for different tabs
-	notebook := gtk4.NewNotebook()
-	mainBox.Append(notebook)
-	notebook.SetHExpand(true)
-	notebook.SetVExpand(true)
+	// Create stack for different tabs
+	stack := gtk4.NewStack()
+	mainBox.Append(stack)
 
 	// Create processes tab
 	processesTab := createProcessesTab()
-	notebook.AppendPage(processesTab, gtk4.NewLabel("Processes"))
+	stack.AddTitled(processesTab, "processes", "Processes")
 
 	// Create performance tab
 	performanceTab := createPerformanceTab()
-	notebook.AppendPage(performanceTab, gtk4.NewLabel("Performance"))
+	stack.AddTitled(performanceTab, "performance", "Performance")
+
+	// Create stack switcher (tabs)
+	stackSwitcher := gtk4.NewStackSwitcher(stack)
+	mainBox.Append(stackSwitcher)
 
 	// Create status bar
 	statusBar := createStatusBar()
@@ -134,10 +134,6 @@ func createMainLayout() *gtk4.Box {
 // createHeaderBar creates the header bar with search and actions
 func createHeaderBar() *gtk4.Box {
 	headerBox := gtk4.NewBox(gtk4.OrientationHorizontal, 10)
-	headerBox.SetMarginTop(5)
-	headerBox.SetMarginBottom(5)
-	headerBox.SetMarginStart(5)
-	headerBox.SetMarginEnd(5)
 
 	// Search entry
 	searchEntry := gtk4.NewEntry()
@@ -163,181 +159,149 @@ func createHeaderBar() *gtk4.Box {
 // createProcessesTab creates the processes tab content
 func createProcessesTab() *gtk4.ScrolledWindow {
 	// Create scrolled window
-	scrollWin := gtk4.NewScrolledWindow(
-		gtk4.WithHScrollbarPolicy(gtk4.ScrollbarPolicyNever),
-		gtk4.WithVScrollbarPolicy(gtk4.ScrollbarPolicyAutomatic),
-		gtk4.WithHExpand(true),
-		gtk4.WithVExpand(true)
-	)
+	scrollWin := gtk4.NewScrolledWindow()
 
-	// Create tree view
-	processTreeView = gtk4.NewTreeView(nil, nil)
-	processTreeView.SetEnableSearch(true)
-	processTreeView.SetSearchColumn(COL_NAME)
+	// Create string list model to display processes
+	processListModel = gtk4.NewStringList()
 
-	// Create columns
-	createProcessListColumns()
+	// Create a selection model for the list
+	selectionModel = gtk4.NewSingleSelection(processListModel)
 
-	// Create list store with column types
-	types := []gtk4.GType{
-		gtk4.GTypeInt64,     // PID
-		gtk4.GTypeString,    // Name
-		gtk4.GTypeString,    // Username
-		gtk4.GTypeDouble,    // CPU %
-		gtk4.GTypeInt64,     // Memory (bytes)
-		gtk4.GTypeInt,       // Threads
-		gtk4.GTypeString,    // State
-		gtk4.GTypeString,    // Started
-	}
-	processListStore = gtk4.NewListStore(types)
-	processTreeView.SetModel(processListStore)
+	// Create a factory for list items
+	factory := gtk4.NewSignalListItemFactory()
 
-	// Connect to selection changed
-	selection := processTreeView.GetSelection()
-	selection.ConnectChanged(func() {
-		// Get the selected row
-		iter, selected := selection.GetSelected()
-		if selected {
-			// Get the PID from the selected row
-			pidValue := processListStore.GetValue(iter, COL_PID)
-			if pidValue != nil {
-				selectedPID = pidValue.(int64)
-			} else {
-				selectedPID = -1
-			}
+	// Set up list items with setup callback
+	factory.ConnectSetup(func(listItem *gtk4.ListItem) {
+		// Create a box for layout
+		box := gtk4.NewBox(gtk4.OrientationHorizontal, 10)
+		box.SetHExpand(true)
+		box.AddCssClass("list-item-box")
+
+		// Create an icon and label
+		icon := gtk4.NewLabel("•")
+		icon.AddCssClass("list-item-icon")
+		box.Append(icon)
+
+		label := gtk4.NewLabel("")
+		label.AddCssClass("list-item-label")
+		box.Append(label)
+
+		// Set the box as the child of the list item
+		listItem.SetChild(box)
+	})
+
+	// Bind data to list items
+	factory.ConnectBind(func(listItem *gtk4.ListItem) {
+		// Get the text from the model
+		text := listItem.GetText()
+		if text == "" {
+			text = fmt.Sprintf("Item %d", listItem.GetPosition()+1)
+		}
+
+		// Set the text on the label inside the box
+		listItem.SetTextOnChildLabel(text)
+
+		// Add selected class if the item is selected
+		if listItem.GetSelected() {
+			boxWidget := listItem.GetChild()
+			boxWidget.AddCssClass("selected")
 		} else {
-			selectedPID = -1
+			boxWidget := listItem.GetChild()
+			boxWidget.RemoveCssClass("selected")
 		}
 	})
 
-	// Add the tree view to the scrolled window
-	scrollWin.SetChild(processTreeView)
+	// Create the list view with selection model and factory
+	processListView = gtk4.NewListView(selectionModel, factory)
+
+	// Connect activate signal for item selection
+	processListView.ConnectActivate(func(position int) {
+		if position >= 0 && position < len(processCache) {
+			// Get the actual PID from our process cache
+			selectedPID = processCache[position].PID
+			setStatus(fmt.Sprintf("Selected process: %s (PID: %d)", processCache[position].Name, selectedPID))
+		} else {
+			selectedPID = -1
+			setStatus("Invalid process selection")
+		}
+	})
+
+	// Add the list view to the scrolled window
+	scrollWin.SetChild(processListView)
 
 	return scrollWin
 }
 
-// createProcessListColumns creates columns for the process list
-func createProcessListColumns() {
-	// PID column
-	renderer := gtk4.NewCellRendererText()
-	column := gtk4.NewTreeViewColumn("PID", renderer)
-	column.SetResizable(true)
-	column.SetSortColumnID(COL_PID)
-	column.SetAttribute(renderer, "text", COL_PID)
-	processTreeView.AppendColumn(column)
 
-	// Process Name column
-	renderer = gtk4.NewCellRendererText()
-	column = gtk4.NewTreeViewColumn("Process Name", renderer)
-	column.SetResizable(true)
-	column.SetExpand(true)
-	column.SetSortColumnID(COL_NAME)
-	column.SetAttribute(renderer, "text", COL_NAME)
-	processTreeView.AppendColumn(column)
-
-	// Username column
-	renderer = gtk4.NewCellRendererText()
-	column = gtk4.NewTreeViewColumn("User", renderer)
-	column.SetResizable(true)
-	column.SetSortColumnID(COL_USERNAME)
-	column.SetAttribute(renderer, "text", COL_USERNAME)
-	processTreeView.AppendColumn(column)
-
-	// CPU column
-	renderer = gtk4.NewCellRendererText()
-	column = gtk4.NewTreeViewColumn("CPU %", renderer)
-	column.SetResizable(true)
-	column.SetSortColumnID(COL_CPU)
-	column.SetAttribute(renderer, "text", COL_CPU)
-	processTreeView.AppendColumn(column)
-
-	// Memory column
-	renderer = gtk4.NewCellRendererText()
-	column = gtk4.NewTreeViewColumn("Memory", renderer)
-	column.SetResizable(true)
-	column.SetSortColumnID(COL_MEMORY)
-	column.SetAttribute(renderer, "text", COL_MEMORY)
-	processTreeView.AppendColumn(column)
-
-	// Threads column
-	renderer = gtk4.NewCellRendererText()
-	column = gtk4.NewTreeViewColumn("Threads", renderer)
-	column.SetResizable(true)
-	column.SetSortColumnID(COL_THREADS)
-	column.SetAttribute(renderer, "text", COL_THREADS)
-	processTreeView.AppendColumn(column)
-
-	// State column
-	renderer = gtk4.NewCellRendererText()
-	column = gtk4.NewTreeViewColumn("State", renderer)
-	column.SetResizable(true)
-	column.SetSortColumnID(COL_STATE)
-	column.SetAttribute(renderer, "text", COL_STATE)
-	processTreeView.AppendColumn(column)
-
-	// Started column
-	renderer = gtk4.NewCellRendererText()
-	column = gtk4.NewTreeViewColumn("Started", renderer)
-	column.SetResizable(true)
-	column.SetSortColumnID(COL_STARTED)
-	column.SetAttribute(renderer, "text", COL_STARTED)
-	processTreeView.AppendColumn(column)
-
-	// Connect sort signals to all columns
-	for i := 0; i < COL_COUNT; i++ {
-		col := processTreeView.GetColumn(i)
-		if col != nil {
-			colID := i // Capture the column ID
-			col.ConnectClicked(func() {
-				// Toggle sort order for this column
-				columnSortOrder[colID] = !columnSortOrder[colID]
-				sortProcessList(colID, columnSortOrder[colID])
-			})
-		}
-	}
-}
 
 // createPerformanceTab creates the performance tab content
 func createPerformanceTab() *gtk4.Box {
 	box := gtk4.NewBox(gtk4.OrientationVertical, 10)
-	box.SetMarginTop(10)
-	box.SetMarginBottom(10)
-	box.SetMarginStart(10)
-	box.SetMarginEnd(10)
 
 	// CPU usage section
 	cpuLabel := gtk4.NewLabel("CPU Usage")
-	cpuLabel.SetHAlign(gtk4.AlignStart)
-	cpuLabel.SetMarginTop(10)
 	cpuLabel.AddCssClass("heading")
 	box.Append(cpuLabel)
 
-	// CPU usage would go here (placeholder)
-	cpuPlaceholder := gtk4.NewLabel("CPU usage graphs will appear here")
-	cpuPlaceholder.SetHAlign(gtk4.AlignCenter)
-	cpuPlaceholder.SetVAlign(gtk4.AlignCenter)
-	cpuPlaceholder.SetMarginTop(20)
-	cpuPlaceholder.SetMarginBottom(20)
-	cpuPlaceholder.SetMarginStart(20)
-	cpuPlaceholder.SetMarginEnd(20)
-	box.Append(cpuPlaceholder)
+	// CPU usage display
+	cpuValueLabel := gtk4.NewLabel("Collecting data...")
+	cpuValueLabel.AddCssClass("usage-value")
+	box.Append(cpuValueLabel)
 
 	// Memory usage section
 	memLabel := gtk4.NewLabel("Memory Usage")
-	memLabel.SetHAlign(gtk4.AlignStart)
-	memLabel.SetMarginTop(10)
 	memLabel.AddCssClass("heading")
 	box.Append(memLabel)
 
-	// Memory usage would go here (placeholder)
-	memPlaceholder := gtk4.NewLabel("Memory usage graphs will appear here")
-	memPlaceholder.SetHAlign(gtk4.AlignCenter)
-	memPlaceholder.SetVAlign(gtk4.AlignCenter)
-	memPlaceholder.SetMarginTop(20)
-	memPlaceholder.SetMarginBottom(20)
-	memPlaceholder.SetMarginStart(20)
-	memPlaceholder.SetMarginEnd(20)
-	box.Append(memPlaceholder)
+	// Memory usage display
+	memValueLabel := gtk4.NewLabel("Collecting data...")
+	memValueLabel.AddCssClass("usage-value")
+	box.Append(memValueLabel)
+
+	// Start a timer to update the performance data
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		
+		for range ticker.C {
+			// Use RunOnUIThread to safely update UI components from a goroutine
+			gtk4go.RunOnUIThread(func() {
+				// Update CPU usage
+				cpuUsage, err := getCPUUsage()
+				if err == nil {
+					cpuValueLabel.SetText(fmt.Sprintf("CPU Usage: %.1f%%", cpuUsage))
+					cpuValueLabel.AddCssClass("usage-normal")
+					if cpuUsage > 80 {
+						cpuValueLabel.RemoveCssClass("usage-normal")
+						cpuValueLabel.AddCssClass("usage-high")
+					}
+				} else {
+					cpuValueLabel.SetText("CPU Usage: Error - " + err.Error())
+				}
+				
+				// Update memory usage
+				total, free, err := getSystemMemoryInfo()
+				if err == nil {
+					used := total - free
+					usedPercentage := float64(used) / float64(total) * 100
+					
+					// Calculate values in MB for display
+					totalMB := total / (1024 * 1024)
+					usedMB := used / (1024 * 1024)
+					
+					memValueLabel.SetText(fmt.Sprintf("Memory Usage: %d MB / %d MB (%.1f%%)", 
+						usedMB, totalMB, usedPercentage))
+					memValueLabel.AddCssClass("usage-normal")
+					if usedPercentage > 80 {
+						memValueLabel.RemoveCssClass("usage-normal")
+						memValueLabel.AddCssClass("usage-high")
+					}
+				} else {
+					memValueLabel.SetText("Memory Usage: Error - " + err.Error())
+				}
+			})
+		}
+	}()
 
 	return box
 }
@@ -345,10 +309,6 @@ func createPerformanceTab() *gtk4.Box {
 // createStatusBar creates the status bar at the bottom
 func createStatusBar() *gtk4.Box {
 	statusBox := gtk4.NewBox(gtk4.OrientationHorizontal, 5)
-	statusBox.SetMarginTop(5)
-	statusBox.SetMarginBottom(5)
-	statusBox.SetMarginStart(5)
-	statusBox.SetMarginEnd(5)
 
 	// Status label
 	statusLabel = gtk4.NewLabel("Ready")
@@ -377,7 +337,10 @@ func refreshProcessList() {
 	setStatus("Refreshing process list...")
 
 	// Clear the current list
-	processListStore.Clear()
+	// Remove all items - items.length changes after each remove, so remove from the end
+	for i := processListModel.GetNItems() - 1; i >= 0; i-- {
+		processListModel.Remove(i)
+	}
 
 	// Get the process data
 	processes, err := getProcesses()
@@ -386,18 +349,41 @@ func refreshProcessList() {
 		return
 	}
 
-	// Add each process to the list store
+	// Update the process cache
+	processCache = processes
+
+	// Add each process to the list
 	for _, proc := range processes {
-		// Add a new row to the list store
-		iter := processListStore.Append()
-		processListStore.SetValue(iter, COL_PID, proc.PID)
-		processListStore.SetValue(iter, COL_NAME, proc.Name)
-		processListStore.SetValue(iter, COL_USERNAME, proc.Username)
-		processListStore.SetValue(iter, COL_CPU, proc.CPUPercent)
-		processListStore.SetValue(iter, COL_MEMORY, proc.MemoryBytes)
-		processListStore.SetValue(iter, COL_THREADS, proc.Threads)
-		processListStore.SetValue(iter, COL_STATE, proc.State)
-		processListStore.SetValue(iter, COL_STARTED, proc.StartTime)
+		// Format a display string for each process
+		// Handle empty values for better display
+		username := proc.Username
+		if username == "" {
+			username = "N/A"
+		}
+		
+		state := proc.State
+		if state == "" {
+			state = "N/A"
+		}
+		
+		startTime := proc.StartTime
+		if startTime == "" {
+			startTime = "N/A"
+		}
+		
+		displayText := fmt.Sprintf("%d | %s | %s | %.1f%% | %dMB | %d | %s | %s",
+			proc.PID,
+			proc.Name,
+			username,
+			proc.CPUPercent,
+			proc.MemoryBytes/(1024*1024),
+			proc.Threads,
+			state,
+			startTime,
+		)
+		
+		// Add to the list model
+		processListModel.Append(displayText)
 	}
 
 	setStatus(fmt.Sprintf("Process list refreshed. %d processes found.", len(processes)))
@@ -429,16 +415,18 @@ func endSelectedProcess() {
 	// Show confirmation dialog
 	dialog := gtk4.NewMessageDialog(
 		nil, // parent window
-		gtk4.DialogFlagModal|gtk4.DialogFlagDestroyWithParent,
-		gtk4.MessageTypeWarning,
-		gtk4.ButtonsOkCancel,
+		gtk4.DialogModal|gtk4.DialogDestroyWithParent,
+		gtk4.MessageWarning,
+		gtk4.ResponseOk|gtk4.ResponseCancel,
 		fmt.Sprintf("Are you sure you want to terminate process %d?", selectedPID),
 	)
-	dialog.SetSecondaryText("This may cause data loss if the application is not responding.")
+	// Add secondary text
+	secondaryLabel := gtk4.NewLabel("This may cause data loss if the application is not responding.")
+	dialog.GetContentArea().Append(secondaryLabel)
 
 	// Handle dialog response
-	dialog.ConnectResponse(func(responseID int) {
-		if responseID == int(gtk4.ResponseOk) {
+	dialog.ConnectResponse(func(responseId gtk4.ResponseType) {
+		if responseId == gtk4.ResponseOk {
 			// User confirmed, try to kill the process
 			err := terminateProcess(selectedPID)
 			if err != nil {
@@ -467,15 +455,14 @@ func sortProcessList(columnID int, ascending bool) {
 // loadAppStyles loads the CSS styles for the application
 func loadAppStyles() {
 	// Get the CSS provider and add styles
-	cssProvider := gtk4.NewCssProvider()
-	cssProvider.LoadFromData(GetCSS())
+	cssProvider, err := gtk4.LoadCSS(GetCSS())
+	if err != nil {
+		fmt.Printf("Error loading CSS: %v\n", err)
+		return
+	}
 
 	// Apply to all windows in the application
-	gtk4.StyleContextAddProviderForDisplay(
-		gtk4.GetDefaultDisplay(),
-		cssProvider,
-		gtk4.StyleProviderPriorityApplication,
-	)
+	gtk4.AddProviderForDisplay(cssProvider, 600)
 }
 
 // setStatus updates the status bar text
