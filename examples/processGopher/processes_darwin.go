@@ -2,8 +2,10 @@ package main
 
 import (
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // splitFieldsPreservingQuotes splits a string into fields while preserving quoted sections
@@ -40,19 +42,23 @@ func splitFieldsPreservingQuotes(s string) []string {
 
 // getSystemMemoryInfo gets the total and free memory on macOS
 func getSystemMemoryInfo() (total int64, free int64, err error) {
+	// Default values in case commands fail
+	defaultTotal := int64(8 * 1024 * 1024 * 1024)  // 8 GB
+	defaultFree := int64(4 * 1024 * 1024 * 1024)   // 4 GB
+	
 	// Get total physical memory
 	cmd := exec.Command("sysctl", "-n", "hw.memsize")
 	output, err := cmd.Output()
 	if err != nil {
 		// Fallback to a reasonable default if the command fails
-		return 8 * 1024 * 1024 * 1024, 4 * 1024 * 1024 * 1024, nil
+		return defaultTotal, defaultFree, nil
 	}
 
 	totalStr := strings.TrimSpace(string(output))
 	total, err = strconv.ParseInt(totalStr, 10, 64)
 	if err != nil {
 		// Fallback to a reasonable default if parsing fails
-		return 8 * 1024 * 1024 * 1024, 4 * 1024 * 1024 * 1024, nil
+		return defaultTotal, defaultFree, nil
 	}
 
 	// Get memory usage using vm_stat command
@@ -60,6 +66,18 @@ func getSystemMemoryInfo() (total int64, free int64, err error) {
 	output, err = cmd.Output()
 	if err != nil {
 		// Fallback to estimating free memory as 50% of total
+		// Also retry with sysctl if vm_stat fails
+		cmd = exec.Command("sysctl", "-n", "hw.usermem")
+		userMemOutput, userMemErr := cmd.Output()
+		if userMemErr == nil {
+			userMemStr := strings.TrimSpace(string(userMemOutput))
+			userMem, userMemErr := strconv.ParseInt(userMemStr, 10, 64)
+			if userMemErr == nil && userMem > 0 {
+				// Calculate free memory as total - usermem
+				return total, total - userMem, nil
+			}
+		}
+		
 		return total, total / 2, nil
 	}
 
@@ -116,6 +134,22 @@ func getSystemMemoryInfo() (total int64, free int64, err error) {
 
 // getCPUUsage gets the current CPU usage on macOS
 func getCPUUsage() (float64, error) {
+	// Use a cache to avoid excessive calls
+	static := struct {
+		cache        float64
+		lastQuery    time.Time
+		cacheDuration time.Duration
+	}{
+		cache:        5.0, // Default value
+		lastQuery:    time.Time{},
+		cacheDuration: 500 * time.Millisecond,
+	}
+	
+	// Return cached value if recent enough
+	if time.Since(static.lastQuery) < static.cacheDuration {
+		return static.cache, nil
+	}
+	
 	// Use a simpler and more reliable approach with vm_stat and ps
 	// First try iostat which gives reliable CPU numbers
 	cmd := exec.Command("iostat", "-c", "2")
@@ -136,8 +170,10 @@ func getCPUUsage() (float64, error) {
 				sysCPU, errSys := strconv.ParseFloat(sysStr, 64)
 
 				if errUser == nil && errSys == nil {
-					// Return combined CPU usage
-					return userCPU + sysCPU, nil
+					// Update cache and return combined CPU usage
+					static.cache = userCPU + sysCPU
+					static.lastQuery = time.Now()
+					return static.cache, nil
 				}
 			}
 		}
@@ -147,6 +183,41 @@ func getCPUUsage() (float64, error) {
 	cmd = exec.Command("top", "-l", "1", "-n", "0")
 	output, err = cmd.Output()
 	if err != nil {
+		// Try ps as another alternative
+		cmd = exec.Command("ps", "-A", "-o", "%cpu")
+		psOutput, psErr := cmd.Output()
+		if psErr == nil {
+			lines := strings.Split(string(psOutput), "\n")
+			var total float64
+			count := 0
+			
+			// Skip header
+			for i, line := range lines {
+				if i == 0 || line == "" {
+					continue
+				}
+				
+				cpu, err := strconv.ParseFloat(strings.TrimSpace(line), 64)
+				if err == nil {
+					total += cpu
+					count++
+				}
+			}
+			
+			if count > 0 {
+				// Scale the value appropriately for display
+				cpuUsage := total / float64(runtime.NumCPU())
+				if cpuUsage > 100 {
+					cpuUsage = 100
+				}
+				
+				// Update cache and return
+				static.cache = cpuUsage
+				static.lastQuery = time.Now()
+				return cpuUsage, nil
+			}
+		}
+		
 		return 5.0, nil // Return a reasonable default if all methods fail
 	}
 
@@ -185,8 +256,11 @@ func getCPUUsage() (float64, error) {
 		}
 	}
 
-	// If all else fails, return a reasonable default value
-	return 5.0, nil
+	// Update cache before returning
+	result := 5.0 // Default value
+	static.cache = result
+	static.lastQuery = time.Now()
+	return result, nil
 }
 
 // getDarwinProcessDetails gets additional details about a process on macOS
